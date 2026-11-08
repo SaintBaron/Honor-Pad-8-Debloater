@@ -1,0 +1,59 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Signing key
+        env:
+          KS: ${{ secrets.DEBLOATER_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/debloater.jks"
+            echo "DEBLOATER_KEYSTORE=$RUNNER_TEMP/debloater.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::DEBLOATER_KEYSTORE_B64 secret not set; signing with a throwaway debug key (updates won't install over it)"
+          fi
+
+      - name: Build
+        env:
+          DEBLOATER_KEYSTORE_PASSWORD: ${{ secrets.DEBLOATER_KEYSTORE_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk honor-pad-8-debloater.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: honor-pad-8-debloater-apk
+          path: honor-pad-8-debloater.apk
+
+      - name: Publish to the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest honor-pad-8-debloater.apk \
+            --target "${{ github.sha }}" \
+            --title "Honor Pad 8 Debloater build ${{ github.run_number }}" \
+            --notes "Built from ${{ github.sha }}. Install with: adb install -r -t honor-pad-8-debloater.apk" \
+            --prerelease
