@@ -38,7 +38,7 @@ jobs:
             echo "$KS" | base64 -d > "$RUNNER_TEMP/debloater.jks"
             echo "DEBLOATER_KEYSTORE=$RUNNER_TEMP/debloater.jks" >> "$GITHUB_ENV"
           else
-            echo "::warning::DEBLOATER_KEYSTORE_B64 secret not set; signing with a throwaway debug key (updates won't install over it, and no setup QR code is made)"
+            echo "::warning::DEBLOATER_KEYSTORE_B64 secret not set; signing with a throwaway debug key (updates won't install over it)"
           fi
 
       - name: Build
@@ -49,41 +49,23 @@ jobs:
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk honor-pad-8-debloater.apk
 
-      - name: Setup QR code
-        if: env.DEBLOATER_KEYSTORE != ''
-        env:
-          DEBLOATER_KEYSTORE_PASSWORD: ${{ secrets.DEBLOATER_KEYSTORE_PASSWORD }}
-        run: |
-          keytool -exportcert -keystore "$DEBLOATER_KEYSTORE" -alias debloater \
-            -storepass:env DEBLOATER_KEYSTORE_PASSWORD -file "$RUNNER_TEMP/cert.der"
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes -r tools/requirements.txt
-          "$RUNNER_TEMP/venv/bin/python" tools/make_qr.py "$RUNNER_TEMP/cert.der" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/honor-pad-8-debloater.apk" .
-
       - name: Remove signing key
         if: always()
-        run: rm -f "$RUNNER_TEMP/debloater.jks" "$RUNNER_TEMP/cert.der"
+        run: rm -f "$RUNNER_TEMP/debloater.jks"
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: honor-pad-8-debloater-apk
-          path: |
-            honor-pad-8-debloater.apk
-            provisioning-qr.png
-            provisioning.json
-          if-no-files-found: warn
+          path: honor-pad-8-debloater.apk
 
       - name: Publish to the "latest" release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          files="honor-pad-8-debloater.apk"
-          [ -f provisioning-qr.png ] && files="$files provisioning-qr.png provisioning.json"
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest $files \
+          gh release create latest honor-pad-8-debloater.apk \
             --target "${{ github.sha }}" \
             --title "Honor Pad 8 Debloater build ${{ github.run_number }}" \
-            --notes "Set up on a factory-reset tablet: tap the welcome screen 6 times and scan provisioning-qr.png. Full guide in the README." \
+            --notes "Install and setup guide: see the README." \
             --prerelease
