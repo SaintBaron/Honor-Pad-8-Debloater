@@ -97,8 +97,8 @@ class MainActivity : Activity() {
             "Device owner: yes\nEnforcing ${Store.parse(blockEdit.text.toString()).size} hidden, " +
                 "${Store.parse(lockEdit.text.toString()).size} permission-locked. Runs at boot and every 6 hours."
         } else {
-            "Device owner: NO, nothing is enforced.\nSet it up by factory-resetting the tablet and scanning " +
-                "the QR code from the project's Releases page (tap the welcome screen 6 times)."
+            "Device owner: NO, nothing is enforced.\nRemove all accounts from the tablet, then from a PC run:\n" +
+                "adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver"
         }
         newView.text = store.readText(Store.NEW).ifBlank { "(none)" }
         logView.text = store.readLog().ifBlank { "(empty)" }
@@ -130,7 +130,7 @@ class MainActivity : Activity() {
             .setTitle("Release device owner?")
             .setMessage(
                 "Everything the debloater hid comes back, its permission locks are lifted, and it stops " +
-                    "enforcing. Setting it up again needs a factory reset (or adb with no accounts on the tablet)."
+                    "enforcing. Setting it up again needs adb, with all accounts removed from the tablet first."
             )
             .setPositiveButton("Release") { _, _ -> work("Release") { enforcer.release() } }
             .setNegativeButton("Cancel", null)

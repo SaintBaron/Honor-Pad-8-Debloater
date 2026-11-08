@@ -15,14 +15,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.PersistableBundle
 
-/** Device admin entry point. Becomes device owner by QR-code setup, or: adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver */
+/** Device admin entry point. Becomes device owner via: adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver */
 class AdminReceiver : DeviceAdminReceiver() {
     override fun onEnabled(context: Context, intent: Intent) {
         Scheduler.runSoon(context, "admin-enabled")
-    }
-
-    override fun onProfileProvisioningComplete(context: Context, intent: Intent) {
-        Scheduler.runSoon(context, "provisioned")
     }
 }
 

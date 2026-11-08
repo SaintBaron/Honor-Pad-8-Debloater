@@ -18,15 +18,14 @@ boot and every 6 hours.
 2. [How it works](#how-it-works)
 3. [What it can't do](#what-it-cant-do)
 4. [Before you start](#before-you-start)
-5. [Tutorial A: set up with a QR code (no PC)](#tutorial-a-set-up-with-a-qr-code-no-pc)
-6. [Tutorial B: set up with adb (no reset)](#tutorial-b-set-up-with-adb-no-reset)
-7. [Using the app](#using-the-app)
-8. [The lists](#the-lists)
-9. [Updating, and removing it](#updating-and-removing-it)
-10. [Security and privacy](#security-and-privacy)
-11. [Building it yourself](#building-it-yourself)
-12. [Troubleshooting](#troubleshooting)
-13. [Project layout](#project-layout)
+5. [Setting it up](#setting-it-up)
+6. [Using the app](#using-the-app)
+7. [The lists](#the-lists)
+8. [Updating, and removing it](#updating-and-removing-it)
+9. [Security and privacy](#security-and-privacy)
+10. [Building it yourself](#building-it-yourself)
+11. [Troubleshooting](#troubleshooting)
+12. [Project layout](#project-layout)
 
 ---
 
@@ -51,7 +50,8 @@ This app fixes all three.
 ### Device owner
 
 Android has a role called **device owner**. Only one app can hold it, and Android only allows it to be set
-on a freshly reset device (or, with adb, on a device that has no accounts). The device-owner app gets a
+while the device has **no accounts** signed in (you remove them for a minute during setup, then sign back in). The
+device-owner app gets a
 set of extra powers through Android's official `DevicePolicyManager` API. This app uses four of them:
 
 | Power | What it does | Used for |
@@ -68,7 +68,7 @@ or by any installer. A hidden app can only be brought back by the device owner, 
 
 - **At every boot**, and again **5 minutes after boot** to catch anything that installs late.
 - **Every 6 hours**, using Android's job scheduler.
-- **Straight after setup**, and when you tap **Enforce now**.
+- **Straight after setup**, and whenever you tap **Enforce now**.
 
 Each run is *idempotent*: running it twice changes nothing the second time. A run:
 
@@ -104,7 +104,7 @@ Some packages are **never** hidden, whatever the list says:
 - **It doesn't block network traffic.** It has no internet permission at all, so it can't act as a firewall. Use
   Private DNS or RethinkDNS alongside it for that.
 - **It survives updates, not factory resets.** A factory reset removes the app and its device-owner role. Set it up again
-  afterwards (the QR code makes that quick).
+  afterwards the same way.
 - **Android shows the tablet as "managed".** You'll see a line such as *"This device is managed by your organisation"* in
   Settings and on the lock screen. That's Android telling you a device owner exists; nobody else can see or control the
   tablet.
@@ -114,87 +114,81 @@ Some packages are **never** hidden, whatever the list says:
 You need:
 
 - **An Honor Pad 8** (or another Android 10+ device; the default lists are tuned for the Pad 8).
-- **Wi-Fi** during setup, so the tablet can download the app.
-- **For Tutorial A:** a second screen (phone, PC or printout) to show the [setup QR code](#the-setup-qr-code) on.
-- **For Tutorial B:** a PC with `adb` and a USB cable.
+- **A PC with `adb`** and a USB cable. Installing adb:
+  - Arch / CachyOS: `sudo pacman -S android-tools`
+  - Debian / Ubuntu: `sudo apt install adb`
+  - Windows / macOS: Google's [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)
+- **Five minutes without your accounts.** Android only lets an app become device owner while no accounts are signed in.
+  You remove them, run one command, and sign straight back in. Nothing is wiped: your Google data stays on Google's servers
+  and syncs back, and your installed apps stay installed.
 
-**Tutorial A wipes the tablet.** Back up photos, files, chats and anything else you want to keep first.
+The app itself is on this repository's **Releases** page, in the release called *latest*: `honor-pad-8-debloater.apk`.
+Step 3 below downloads it for you.
 
-For Tutorial A you only need the QR code below. For Tutorial B, get the app from this repository's **Releases** page
-(the release is called *latest*):
+## Setting it up
 
-| File | What it is |
-|---|---|
-| `honor-pad-8-debloater.apk` | The app |
-| `provisioning-qr.png` | The setup QR code, identical to the one below |
-| `provisioning.json` | What's inside the QR code, for checking |
+The commands below work in bash, zsh and fish. On Windows, use PowerShell and adjust the download folder.
 
-## Tutorial A: set up with a QR code (no PC)
-
-This is Android's official way to set up a device-owner app.
-
-### The setup QR code
-
-<p align="center">
-  <img src="docs/setup-qr.png" alt="Setup QR code for Honor Pad 8 Debloater" width="320">
-</p>
-
-It tells the tablet to download the app from this repository's *latest* release, and to install it only if it's signed
-with this project's key. The exact contents are in [`docs/provisioning.json`](docs/provisioning.json). It doesn't change
-between builds, so it always installs the newest release.
-
-On a phone or small screen, tap the image to open it full size. If you've forked this project and use your own signing
-key, replace `docs/setup-qr.png` with the `provisioning-qr.png` from your own release.
-
-### Steps
-
-1. **Factory-reset the tablet.** Go to **Settings → System & updates → Reset → Reset tablet** (names vary slightly
-   between versions; search Settings for "reset"). Confirm, and wait for it to restart.
-2. **Open the QR scanner.** On the first **welcome screen**, the one with the language picker and *Start* button, tap
-   the same empty spot on the screen **6 times** in quick succession. A QR-code scanner opens. It may ask you to connect
-   to Wi-Fi first.
-   - If HONOR's own screens appear first, go through them until you reach Google's welcome screen, then do the 6 taps there.
-3. **Scan the [setup QR code](#the-setup-qr-code).** Show this page on another device, open the image full-screen, or
-   print it.
-4. **Wait.** The tablet downloads the app and checks that it's signed with the expected key. If the file has been
-   tampered with, setup stops here. It then makes the app device owner. You may see screens about the device being
-   managed; accept them.
-5. **Finish setup normally.** Sign in to your Google account when asked, or afterwards in Settings. Play Store and
-   your apps work as usual.
-6. **Let HONOR's battery manager allow it.** Go to **Settings → Battery → App launch → Honor Pad 8 Debloater**, turn
-   off *Manage automatically*, and turn on **all three** switches (auto-launch, secondary launch, run in background).
-   Without this, HONOR may stop it running at boot.
-7. **Check it worked.** Open **Honor Pad 8 Debloater**. The top should say **Device owner: yes**, and the log should show
-   a `[provisioned]` or `[boot]` line listing what it hid.
-
-That's it. It now looks after itself.
-
-## Tutorial B: set up with adb (no reset)
-
-Use this if you'd rather not reset, or if the 6-tap scanner doesn't appear. You need a PC with adb, USB debugging
-switched on (**Settings → About tablet → tap Build number 7 times**, then **System & updates → Developer options →
-USB debugging**), and the tablet plugged in.
-
-Android only lets you set a device owner over adb when the tablet has **one user and no accounts**.
-
-1. **Check users and accounts:**
+1. **Turn on USB debugging on the tablet.** Go to **Settings → About tablet** and tap **Build number** 7 times, then
+   **Settings → System & updates → Developer options** and turn on **USB debugging**.
+2. **Connect the tablet** to the PC with USB and check adb can see it:
+   ```sh
+   adb devices
+   ```
+   Accept the *Allow USB debugging?* prompt on the tablet. The tablet should then be listed as `device`.
+3. **Download the app** to your Downloads folder:
+   ```sh
+   curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/download/latest/honor-pad-8-debloater.apk
+   ```
+   Replace `<owner>/<repo>` with this repository's path, as shown at the top of its GitHub page. You can also download
+   `honor-pad-8-debloater.apk` from the **Releases** page in your browser.
+4. **Install it:**
+   ```sh
+   adb install -r ~/Downloads/honor-pad-8-debloater.apk
+   ```
+   It should end with `Success`. If you get `failed to stat … No such file or directory`, the path is wrong: check the file
+   is in your Downloads folder and that you typed the full path.
+5. **Remove every account from the tablet.** Go to **Settings → Users & accounts**, tap each account (Google included), then
+   **Remove account**. Then check from the PC:
    ```sh
    adb shell pm list users
    adb shell dumpsys account | grep -E 'Accounts:|Account \{'
    ```
-   The first must list only `UserInfo{0:...}`. The second must show `Accounts: 0`. If it lists accounts, remove them in
-   **Settings → Users & accounts** (tap each one → *Remove account*). Your Google data stays on Google's servers and syncs
-   back when you sign in again; installed apps stay installed.
-2. **Install the app and make it device owner:**
+   The first must list only `UserInfo{0:...}`. The second must show `Accounts: 0`, and no `Account {` lines.
+6. **Make it device owner:**
    ```sh
-   adb install honor-pad-8-debloater.apk
    adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
    ```
    You should see `Success: Device owner set`.
-3. **Sign back in** to your accounts.
-4. **Open the app** and tap **Snapshot removed apps**. This adds everything you already removed with adb to its
-   list, so it's kept removed in future. Then tap **Enforce now**.
-5. Do **step 6** of Tutorial A, to allow it in HONOR's battery manager.
+7. **Sign back in** to your Google account and anything else in **Settings → Users & accounts**.
+8. **Open Honor Pad 8 Debloater** on the tablet. The top should say **Device owner: yes**. Tap **Snapshot removed apps**,
+   which adds anything you already removed with adb to its list, then **Enforce now**.
+9. **Let HONOR's battery manager allow it.** Go to **Settings → Battery → App launch → Honor Pad 8 Debloater**, turn off
+   *Manage automatically*, and turn on **all three** switches (auto-launch, secondary launch, run in background).
+   Without this, HONOR may stop it running at boot.
+10. **Check it runs at boot:**
+    ```sh
+    adb reboot
+    ```
+    Once the tablet has restarted, open the app. The log should have a fresh `[boot]` line at the top.
+
+That's it. It now looks after itself, and you can turn USB debugging off again if you like.
+
+### No PC? Do it on the tablet
+
+The same commands can run on the tablet itself, using Android's **Wireless debugging** (Android 11+) and the free apps
+**Shizuku** and **aShell**:
+
+1. Install Shizuku and aShell, and install `honor-pad-8-debloater.apk` from the Releases page in your browser.
+2. Turn on **Developer options → Wireless debugging**, then start Shizuku with *Start via Wireless debugging* and follow its
+   pairing steps.
+3. Remove all accounts (step 5 above). In aShell, run the two commands from steps 5 and 6 without the `adb shell` part:
+   ```sh
+   dumpsys account | grep -E 'Accounts:|Account \{'
+   dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
+   ```
+4. Carry on from step 7. Afterwards you can uninstall Shizuku and aShell and turn Wireless debugging off; the debloater
+   doesn't need them.
 
 ## Using the app
 
@@ -225,19 +219,20 @@ lists explain what most packages do.
 
 | Group | Examples | Why |
 |---|---|---|
-| Third-party preloads | `com.facebook.appmanager`, `com.facebook.services`, `com.facebook.system` | Background services and an updater for apps you never installed |
+| Third-party preloads | Facebook (`com.facebook.katana`) and its background services and updater (`com.facebook.appmanager`, `.services`, `.system`), Booking.com (`com.booking`), WPS Office (`cn.wps.moffice_eng`) | Apps and background services you never chose to install |
 | HONOR telemetry and cloud | `pushagent`, `hiviewtunnel` (diagnostic upload), `systemappsupdater`, `autoinstallapkfrommcc` (installs region bloat by SIM/country code) | Phone-home and silent installs |
 | HONOR apps | Tips, Weather, Email, Notepad, Recorder, Video editor, Backup, Clone, HiSuite helper, My HONOR, Lens… | Bundled apps with better alternatives |
 | HONOR multi-device | Honor Share, Connect control centre | Only useful with other HONOR devices |
-| Extra picks | Gmail, Drive, Meet, YouTube Music, Google TV, HONOR Themes, Files, Calendar, Search | Personal choice: delete these lines if you use them |
+| Extra picks | Gmail, Drive, Meet, YouTube Music, Google TV, HONOR Themes, Files, Calendar, Calculator, Contacts, Search | Personal choice: delete these lines if you use them |
 
 Some side effects to be aware of:
 
 - **Hiding HONOR Search** (`com.hihonor.search`, `com.hihonor.searchservice`) stops the home-screen search prompts,
   but **the search bar in Settings may stop working**.
 - **Hiding HONOR Themes** may stop wallpaper changes from Settings. Set your wallpaper first, or use another wallpaper app.
-- **Hiding HONOR Files and Calendar** leaves you without those apps; install replacements first. Fossify File Manager and
-  Fossify Calendar are on F-Droid.
+- **Hiding HONOR Files, Calendar, Calculator and Contacts** leaves you without those apps; install replacements first.
+  Fossify File Manager, Calendar, Calculator and Contacts are on F-Droid. Your events and contacts aren't deleted: they stay in
+  your Google account and in Android's own storage, which is never hidden.
 
 ### Lock permissions off: defaults (`app/src/main/assets/lockdown.txt`)
 
@@ -254,10 +249,11 @@ looking them up. Hiding a package the system depends on can break features. Undo
 ### Updating
 
 New builds appear on the Releases page. Updates must be signed with the same key, which GitHub Actions does
-automatically. Install over the top:
+automatically. Download the new build and install it over the top:
 
 ```sh
-adb install -r honor-pad-8-debloater.apk
+curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/download/latest/honor-pad-8-debloater.apk
+adb install -r ~/Downloads/honor-pad-8-debloater.apk
 ```
 
 Or open the APK on the tablet, if you allow your file manager or browser to install apps. Your lists and settings are kept.
@@ -290,8 +286,6 @@ A factory reset also removes it completely.
   another app could do is trigger an extra, harmless run.
 - **Anti-tapjacking.** The screen hides other apps' overlays (Android 12+) and ignores taps while another window covers it,
   so a malicious overlay can't trick you into tapping **Release**.
-- **Tamper-proof setup.** The QR code contains a SHA-256 checksum of the signing certificate. Android checks the downloaded
-  APK against it and refuses anything signed with a different key, even if the download link were hijacked.
 - **Tamper-proof updates.** Android only installs an update signed with the same key as the installed app.
 - **Crash-safe storage.** Every file rewrite is atomic (temp file, sync, rename), so a crash or power cut can't leave an
   empty or half-written list.
@@ -306,8 +300,8 @@ Whoever controls the signing key and this repository can produce an update the t
   Never commit it.
 - The build runs **only** when the owner pushes to `main` or starts it by hand. There's no `pull_request` trigger, so
   forks and pull requests can never reach the secrets.
-- Third-party build steps are **pinned to exact commit hashes**, and the one Python package used (`segno`, for the QR code)
-  is **pinned by hash**, so a hijacked upstream release can't inject code into the build.
+- Third-party build steps are **pinned to exact commit hashes**, so a hijacked upstream release can't inject code into the
+  build.
 - The workflow's GitHub token only has `contents: write` (to publish the release). Checkout credentials aren't kept on disk,
   and the decoded key is deleted at the end of the job.
 - **Protect your GitHub account with two-factor authentication**, and don't give anyone else write access to the repository.
@@ -319,8 +313,7 @@ Open an issue. For anything security-sensitive, don't post details publicly. Use
 
 ## Building it yourself
 
-GitHub Actions builds a signed APK on every push to `main` and publishes it, with the setup QR code, as the
-`latest` release. To build your own copy (for example in a fork):
+GitHub Actions builds a signed APK on every push to `main` and publishes it as the `latest` release. To build your own copy (for example in a fork):
 
 1. **Make a signing key** (needs a JDK for `keytool`):
    ```sh
@@ -338,8 +331,7 @@ GitHub Actions builds a signed APK on every push to `main` and publishes it, wit
 
 3. **Run the build:** **Actions → build → Run workflow**. Download the files from **Releases → latest**.
 
-Without the secrets the build still succeeds, but it's signed with a throwaway key and no QR code is made. Don't install
-that build.
+Without the secrets the build still succeeds, but it's signed with a throwaway key. Don't install that build.
 
 **Checking a build** (optional; needs Android build-tools): confirm the APK's certificate matches your key:
 
@@ -359,23 +351,7 @@ gradle :app:assembleRelease
 Without the signing environment variables (`DEBLOATER_KEYSTORE`, `DEBLOATER_KEYSTORE_PASSWORD`) it signs with your local
 debug key.
 
-**Making the QR code yourself:**
-
-```sh
-keytool -exportcert -keystore debloater.jks -alias debloater -file cert.der
-pip install --require-hashes -r tools/requirements.txt
-python3 tools/make_qr.py cert.der https://github.com/<owner>/<repo>/releases/download/latest/honor-pad-8-debloater.apk
-```
-
 ## Troubleshooting
-
-**Tapping the welcome screen 6 times does nothing.**
-Make sure you're on the very first screen of a freshly reset tablet. If HONOR's screens come first, try again once you
-reach Google's welcome screen. Tap the same spot quickly. If it still doesn't appear, use [Tutorial B](#tutorial-b-set-up-with-adb-no-reset).
-
-**Setup says it can't download or install the app.**
-Check Wi-Fi works and that the *latest* release on GitHub has `honor-pad-8-debloater.apk`. Use the QR code from the **same**
-release as the APK. If the build was signed with the throwaway key, the checksum won't match and Android will refuse it.
 
 **`Not allowed to set the device owner because there are already some accounts on the device`.**
 An account is still signed in. Run `adb shell dumpsys account | grep 'Account {'` to see which, and remove it in Settings.
@@ -385,7 +361,7 @@ Accounts Settings doesn't show disappear when you remove the app that created th
 Remove extra users, guest users and HONOR's *App Twin* in Settings, then check `adb shell pm list users` shows only user 0.
 
 **It doesn't seem to run after a reboot.**
-Redo step 6 of Tutorial A (HONOR's **App launch** settings). Then reboot and check the log for a `[boot]` line.
+Redo step 9 of [Setting it up](#setting-it-up) (HONOR's **App launch** settings). Then reboot and check the log for a `[boot]` line.
 
 **The log says `couldn't block` for an app.**
 HONOR protects that app against both hiding and suspending. Its permissions are locked off instead. Block its network
@@ -399,6 +375,17 @@ Factory-reset it from recovery: switch it off, then hold **Power + Volume Up** u
 combination on HONOR tablets) and choose *Wipe data/factory reset*. That removes the app and everything it did. Then set it up again without the line that caused it. If adb still
 works, `adb shell pm unhide <package>` may bring a single app back without a reset.
 
+**`adb: failed to stat … No such file or directory`.**
+adb can't find the APK at the path you gave. Use the full path, for example `~/Downloads/honor-pad-8-debloater.apk`, and check
+the file is really there with `ls ~/Downloads/*.apk`.
+
+**`Unknown admin: ComponentInfo{app.honorpad8.debloater/...}`.**
+The app isn't installed, usually because the install step failed. Run step 4 again and make sure it says `Success`.
+
+**`adb devices` shows `unauthorized` or nothing.**
+Unlock the tablet and accept the *Allow USB debugging?* prompt. If no prompt appears, unplug, turn USB debugging off and on
+again, and reconnect. Try another cable if needed: some are charge-only.
+
 **I want everything back the way it was.**
 **Release device owner** in the app, then uninstall it. Apps you removed with adb *before* installing it stay removed;
 bring those back with `adb shell cmd package install-existing <package>`, or by factory-resetting.
@@ -406,20 +393,15 @@ bring those back with `adb shell cmd package install-existing <package>`, or by 
 ## Project layout
 
 ```
-.github/workflows/build.yml       CI: builds, signs, makes the QR code, publishes the release
+.github/workflows/build.yml       CI: builds, signs and publishes the release
 app/src/main/AndroidManifest.xml  permissions and components
 app/src/main/assets/              default lists (blocklist.txt, lockdown.txt)
 app/src/main/java/app/honorpad8/debloater/
   Enforcer.kt                     the policy engine: hide, suspend, lock, restore, detect new packages
   Store.kt                        crash-safe storage for the lists, records and log
   Receivers.kt                    device-admin receiver, boot receiver, scheduled job, notifications
-  Provisioning.kt                 the two screens Android 12+ QR setup asks for
   MainActivity.kt                 the app's screen
 app/src/main/res/                 icon, device-admin policy, backup exclusion rules
-docs/setup-qr.png                 the setup QR code shown in this README
-docs/provisioning.json            what's inside it
-tools/make_qr.py                  makes the setup QR code from the signing certificate
-tools/requirements.txt            the QR library, pinned by hash
 ```
 
 ## Licence
