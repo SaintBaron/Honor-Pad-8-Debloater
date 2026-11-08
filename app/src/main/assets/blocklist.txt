@@ -1,0 +1,50 @@
+# Packages the debloater keeps hidden. One per line; # starts a comment.
+# If an update brings one of these back, the debloater hides it again at the next boot or 6-hourly check.
+# Tap "Snapshot removed apps" to add everything you've already removed with adb.
+
+# junk
+com.facebook.appmanager
+com.facebook.services
+com.facebook.system
+com.android.egg
+com.android.dreams.phototable
+
+# Honor: telemetry, cloud, bundled apps
+com.hihonor.android.pushagent
+com.hihonor.hiviewtunnel
+com.hihonor.autoinstallapkfrommcc
+com.hihonor.systemappsupdater
+com.hihonor.phoneservice
+com.hihonor.tips
+com.hihonor.magazine
+com.hihonor.browserhomepage
+com.hihonor.android.totemweather
+com.hihonor.lens
+com.hihonor.koBackup
+com.hihonor.android.clone
+com.hihonor.pcassistant
+com.hihonor.detectrepair
+com.hihonor.mmitest
+com.hihonor.android.projectmenu
+com.hihonor.numberidentity
+com.hihonor.carrierlocation
+com.hihonor.languagedownloader
+com.hihonor.printservice
+com.hihonor.email
+com.hihonor.soundrecorder
+com.hihonor.videoeditor
+com.hihonor.notepad
+com.hihonor.android.instantshare
+com.hihonor.controlcenter
+
+# extra picks
+com.google.android.apps.tachyon
+com.google.android.gm
+com.google.android.apps.youtube.music
+com.google.android.apps.docs
+com.google.android.videos
+com.hihonor.android.thememanager
+com.hihonor.filemanager
+com.hihonor.calendar
+com.hihonor.search
+com.hihonor.searchservice
