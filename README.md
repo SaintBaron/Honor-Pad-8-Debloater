@@ -115,22 +115,38 @@ You need:
 
 - **An Honor Pad 8** (or another Android 10+ device; the default lists are tuned for the Pad 8).
 - **Wi-Fi** during setup, so the tablet can download the app.
-- **For Tutorial A:** a second screen (phone, PC or printout) to show the QR code on.
+- **For Tutorial A:** a second screen (phone, PC or printout) to show the [setup QR code](#the-setup-qr-code) on.
 - **For Tutorial B:** a PC with `adb` and a USB cable.
 
 **Tutorial A wipes the tablet.** Back up photos, files, chats and anything else you want to keep first.
 
-Get the latest files from this repository's **Releases** page (the release is called *latest*):
+For Tutorial A you only need the QR code below. For Tutorial B, get the app from this repository's **Releases** page
+(the release is called *latest*):
 
 | File | What it is |
 |---|---|
 | `honor-pad-8-debloater.apk` | The app |
-| `provisioning-qr.png` | The setup QR code (Tutorial A) |
+| `provisioning-qr.png` | The setup QR code, identical to the one below |
 | `provisioning.json` | What's inside the QR code, for checking |
 
 ## Tutorial A: set up with a QR code (no PC)
 
 This is Android's official way to set up a device-owner app.
+
+### The setup QR code
+
+<p align="center">
+  <img src="docs/setup-qr.png" alt="Setup QR code for Honor Pad 8 Debloater" width="320">
+</p>
+
+It tells the tablet to download the app from this repository's *latest* release, and to install it only if it's signed
+with this project's key. The exact contents are in [`docs/provisioning.json`](docs/provisioning.json). It doesn't change
+between builds, so it always installs the newest release.
+
+On a phone or small screen, tap the image to open it full size. If you've forked this project and use your own signing
+key, replace `docs/setup-qr.png` with the `provisioning-qr.png` from your own release.
+
+### Steps
 
 1. **Factory-reset the tablet.** Go to **Settings → System & updates → Reset → Reset tablet** (names vary slightly
    between versions; search Settings for "reset"). Confirm, and wait for it to restart.
@@ -138,7 +154,8 @@ This is Android's official way to set up a device-owner app.
    the same empty spot on the screen **6 times** in quick succession. A QR-code scanner opens. It may ask you to connect
    to Wi-Fi first.
    - If HONOR's own screens appear first, go through them until you reach Google's welcome screen, then do the 6 taps there.
-3. **Scan `provisioning-qr.png`.** Show it full-screen on another device, or print it.
+3. **Scan the [setup QR code](#the-setup-qr-code).** Show this page on another device, open the image full-screen, or
+   print it.
 4. **Wait.** The tablet downloads the app and checks that it's signed with the expected key. If the file has been
    tampered with, setup stops here. It then makes the app device owner. You may see screens about the device being
    managed; accept them.
@@ -399,6 +416,8 @@ app/src/main/java/app/honorpad8/debloater/
   Provisioning.kt                 the two screens Android 12+ QR setup asks for
   MainActivity.kt                 the app's screen
 app/src/main/res/                 icon, device-admin policy, backup exclusion rules
+docs/setup-qr.png                 the setup QR code shown in this README
+docs/provisioning.json            what's inside it
 tools/make_qr.py                  makes the setup QR code from the signing certificate
 tools/requirements.txt            the QR library, pinned by hash
 ```
