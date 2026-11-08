@@ -16,7 +16,9 @@ import android.provider.Settings
  *  - packages in blocklist.txt that are installed for this user get hidden (suspended if hiding is refused)
  *  - packages dropped from blocklist.txt get unhidden
  *  - packages in lockdown.txt (and any that couldn't be hidden) get their runtime permissions locked off
- *  - packages that weren't on the device before get flagged in new.txt and a notification
+ *  - system/vendor packages that weren't on the device before get flagged in new.txt and a notification
+ *
+ * Every step is idempotent: running it twice in a row changes nothing the second time.
  */
 class Enforcer(context: Context) {
 
@@ -60,6 +62,32 @@ class Enforcer(context: Context) {
         ).associateBy { it.packageName }
 
     private fun installedForUser(info: ApplicationInfo) = (info.flags and ApplicationInfo.FLAG_INSTALLED) != 0
+
+    @Suppress("DEPRECATION")
+    private fun exists(p: String): Boolean = try {
+        pm.getApplicationInfo(p, PackageManager.MATCH_UNINSTALLED_PACKAGES); true
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installerOf(p: String): String? = try {
+        if (Build.VERSION.SDK_INT >= 30) pm.getInstallSourceInfo(p).installingPackageName
+        else pm.getInstallerPackageName(p)
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Only these count as "new bloat" worth a notification: system apps (arrive with updates)
+     * and apps installed by the vendor's own installers. Apps you install yourself are ignored.
+     */
+    private fun isVendorPackage(info: ApplicationInfo): Boolean {
+        val systemFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+        if ((info.flags and systemFlags) != 0) return true
+        val installer = installerOf(info.packageName) ?: return false
+        return VENDOR_INSTALLERS.any { installer.startsWith(it) }
+    }
 
     private fun hidden(p: String) = try { dpm.isApplicationHidden(admin, p) } catch (e: Exception) { false }
 
@@ -153,7 +181,7 @@ class Enforcer(context: Context) {
         // 1. Bring back anything that's been taken off the list.
         for (p in managed.toList()) {
             if (p in wanted) continue
-            if (p !in apps) { managed -= p; continue }
+            if (p !in apps && !exists(p)) { managed -= p; continue }   // package is gone from the device
             try {
                 if (hidden(p)) dpm.setApplicationHidden(admin, p, false)
                 if (suspended(p)) dpm.setPackagesSuspended(admin, arrayOf(p), false)
@@ -210,7 +238,9 @@ class Enforcer(context: Context) {
         }
         store.writeSet(Store.LOCKED, locked)
 
-        // Debloater's own notifications (needed on Android 13+).
+        protectSelf()
+
+        // The app's own notifications (needed on Android 13+).
         if (Build.VERSION.SDK_INT >= 33) {
             try {
                 dpm.setPermissionGrantState(
@@ -222,7 +252,8 @@ class Enforcer(context: Context) {
 
         // 4. Flag packages that weren't here before (an update adding new bloat).
         val baseline = store.readSet(Store.BASELINE)
-        val fresh = if (baseline.isEmpty()) emptyList() else (apps.keys - baseline).sorted()
+        val fresh = if (baseline.isEmpty()) emptyList()
+        else (apps.keys - baseline).filter { p -> apps[p]?.let { isVendorPackage(it) } == true }.sorted()
         if (baseline.isEmpty() || fresh.isNotEmpty()) store.writeSet(Store.BASELINE, baseline + apps.keys)
         if (fresh.isNotEmpty()) {
             store.appendLines(Store.NEW, fresh.map { "${Store.now()} $it" })
@@ -258,12 +289,27 @@ class Enforcer(context: Context) {
         return added.size
     }
 
-    /** Undo everything Debloater did, then give up device owner. */
+    /** Stop the user force-stopping the app or clearing its data (which would wipe its records). */
+    private fun protectSelf() {
+        if (Build.VERSION.SDK_INT < 30) return
+        try {
+            if (ctx.packageName !in dpm.getUserControlDisabledPackages(admin)) {
+                dpm.setUserControlDisabledPackages(admin, listOf(ctx.packageName))
+            }
+        } catch (e: Exception) {
+            store.log("couldn't protect the app from force-stop: ${e.message}")
+        }
+    }
+
+    /** Undo everything this app did, then give up device owner. */
     @Suppress("DEPRECATION")
     fun release(): String = synchronized(LOCK) {
         if (!isOwner()) return "The debloater isn't device owner."
         var undone = 0
-        for (p in store.readSet(Store.MANAGED)) {
+        // Everything it recorded hiding, plus anything on the list that's hidden, in case a record was lost.
+        val toRestore = store.readSet(Store.MANAGED) + store.readList(Store.BLOCK)
+        for (p in toRestore) {
+            if (!hidden(p) && !suspended(p)) continue
             try {
                 if (hidden(p)) dpm.setApplicationHidden(admin, p, false)
                 if (suspended(p)) dpm.setPackagesSuspended(admin, arrayOf(p), false)
@@ -272,9 +318,14 @@ class Enforcer(context: Context) {
                 store.log("release: couldn't restore $p: ${e.message}")
             }
         }
-        for (p in store.readSet(Store.LOCKED)) setPermissions(p, DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
+        val lockedPkgs = store.readSet(Store.LOCKED) + store.readList(Store.LOCKDOWN)
+        for (p in lockedPkgs) setPermissions(p, DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
         store.writeSet(Store.MANAGED, emptySet())
         store.writeSet(Store.LOCKED, emptySet())
+        if (Build.VERSION.SDK_INT >= 30) {
+            try { dpm.setUserControlDisabledPackages(admin, emptyList()) } catch (e: Exception) { }
+        }
+        Scheduler.cancelAll(ctx)
         dpm.clearDeviceOwnerApp(ctx.packageName)
         store.log("released device owner; restored $undone package(s)")
         return "Released. $undone app(s) un-hidden. Apps you removed with adb before setup stay removed."
@@ -282,5 +333,6 @@ class Enforcer(context: Context) {
 
     companion object {
         private val LOCK = Any()
+        private val VENDOR_INSTALLERS = listOf("com.hihonor.", "com.huawei.", "com.facebook.")
     }
 }

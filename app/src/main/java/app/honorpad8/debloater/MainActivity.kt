@@ -2,6 +2,8 @@ package app.honorpad8.debloater
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.DialogInterface
+import android.os.Build
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.InputType
@@ -29,6 +31,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Don't let other apps draw over this screen (stops "tapjacking" the Release button).
+        if (Build.VERSION.SDK_INT >= 31) window.setHideOverlayWindows(true)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -49,12 +53,11 @@ class MainActivity : Activity() {
         root.addView(lockEdit)
 
         root.addView(row(
-            button("Save") { save() },
+            button("Save") { if (save()) toast("Saved") },
             button("Enforce now") { work("Enforced") { enforcer.enforce("manual")?.summary() ?: "Not device owner." } },
         ))
         root.addView(row(
             button("Snapshot removed apps") {
-                save()
                 work("Snapshot") { "Added ${enforcer.snapshot()} package(s) to the list." }
             },
             button("Clear new-package list") { store.clear(Store.NEW); refresh() },
@@ -74,17 +77,18 @@ class MainActivity : Activity() {
 
         setContentView(ScrollView(this).apply {
             fitsSystemWindows = true
+            filterTouchesWhenObscured = true    // ignore taps while another app's window covers this one
             addView(root)
         })
 
-        Scheduler.ensurePeriodic(this)
+        blockEdit.setText(store.readRaw(Store.BLOCK))
+        lockEdit.setText(store.readRaw(Store.LOCKDOWN))
+        if (enforcer.isOwner()) Scheduler.ensurePeriodic(this)
     }
 
     override fun onResume() {
         super.onResume()
-        blockEdit.setText(store.readRaw(Store.BLOCK))
-        lockEdit.setText(store.readRaw(Store.LOCKDOWN))
-        refresh()
+        refresh()   // status and log only; never overwrite unsaved edits in the lists
     }
 
     private fun refresh() {
@@ -93,21 +97,24 @@ class MainActivity : Activity() {
             "Device owner: yes\nEnforcing ${Store.parse(blockEdit.text.toString()).size} hidden, " +
                 "${Store.parse(lockEdit.text.toString()).size} permission-locked. Runs at boot and every 6 hours."
         } else {
-            "Device owner: NO, nothing is enforced.\nFrom the PC, with no accounts on the tablet, run:\n" +
-                "adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver"
+            "Device owner: NO, nothing is enforced.\nSet it up by factory-resetting the tablet and scanning " +
+                "the QR code from the project's Releases page (tap the welcome screen 6 times)."
         }
         newView.text = store.readText(Store.NEW).ifBlank { "(none)" }
         logView.text = store.readLog().ifBlank { "(empty)" }
     }
 
-    private fun save() {
+    private fun save(): Boolean = try {
         store.writeRaw(Store.BLOCK, blockEdit.text.toString())
         store.writeRaw(Store.LOCKDOWN, lockEdit.text.toString())
-        toast("Saved")
+        true
+    } catch (e: Exception) {
+        toast("Couldn't save: ${e.message}")
+        false
     }
 
     private fun work(label: String, job: () -> String) {
-        save()
+        if (!save()) return
         Thread {
             val msg = try { job() } catch (e: Exception) { "Error: $e" }
             runOnUiThread {
@@ -119,12 +126,16 @@ class MainActivity : Activity() {
     }
 
     private fun confirmRelease() {
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Release device owner?")
-            .setMessage("Everything the debloater hid comes back, and it stops enforcing. Setting it up again needs all accounts removed from the tablet first.")
+            .setMessage(
+                "Everything the debloater hid comes back, its permission locks are lifted, and it stops " +
+                    "enforcing. Setting it up again needs a factory reset (or adb with no accounts on the tablet)."
+            )
             .setPositiveButton("Release") { _, _ -> work("Release") { enforcer.release() } }
             .setNegativeButton("Cancel", null)
             .show()
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE)?.filterTouchesWhenObscured = true
     }
 
     // ------------------------------------------------------------------ views

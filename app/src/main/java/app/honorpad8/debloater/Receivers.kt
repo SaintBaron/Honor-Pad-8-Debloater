@@ -15,14 +15,23 @@ import android.content.Context
 import android.content.Intent
 import android.os.PersistableBundle
 
-/** Device admin entry point. Becomes device owner via: adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver */
+/** Device admin entry point. Becomes device owner by QR-code setup, or: adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver */
 class AdminReceiver : DeviceAdminReceiver() {
     override fun onEnabled(context: Context, intent: Intent) {
         Scheduler.runSoon(context, "admin-enabled")
     }
+
+    override fun onProfileProvisioningComplete(context: Context, intent: Intent) {
+        Scheduler.runSoon(context, "provisioned")
+    }
 }
 
-/** Runs the enforcer straight after boot and after Debloater itself is updated. */
+/**
+ * Runs the enforcer straight after boot and after this app is updated.
+ * Exported so the system can deliver these broadcasts; both actions are "protected" broadcasts
+ * that only the system can send, and anything else is ignored. The worst another app could
+ * cause is an extra (harmless, idempotent) enforcement run.
+ */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val trigger = when (intent.action) {
@@ -30,6 +39,7 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED -> "app-updated"
             else -> return
         }
+        if (!Enforcer(context).isOwner()) return   // not set up (or released): do nothing
         Scheduler.ensurePeriodic(context)
         val pending = goAsync()
         Thread {
@@ -81,6 +91,10 @@ object Scheduler {
                 .setPersisted(true)
                 .build()
         )
+    }
+
+    fun cancelAll(ctx: Context) {
+        ctx.getSystemService(JobScheduler::class.java).cancelAll()
     }
 
     fun runSoon(ctx: Context, trigger: String, delayMs: Long = 0L) {
