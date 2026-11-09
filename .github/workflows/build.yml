@@ -9,11 +9,17 @@ on:
 
 permissions: {}
 
+# One build at a time, so two quick pushes can't race to publish releases.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build:
+  # ---------------------------------------------------------------- the Android app
+  apk:
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # needed to publish the "latest" release
+      contents: read
     steps:
       # Third-party steps are pinned to exact commits (tag in the comment), so a moved
       # or hijacked tag can't swap in different code.
@@ -38,7 +44,21 @@ jobs:
             echo "$KS" | base64 -d > "$RUNNER_TEMP/debloater.jks"
             echo "DEBLOATER_KEYSTORE=$RUNNER_TEMP/debloater.jks" >> "$GITHUB_ENV"
           else
-            echo "::warning::DEBLOATER_KEYSTORE_B64 secret not set; signing with a throwaway debug key (updates won't install over it)"
+            echo "::warning::DEBLOATER_KEYSTORE_B64 secret not set; signing with a throwaway debug key. The setup tool will refuse to install it."
+          fi
+
+      - name: Check the key matches the one the setup tool trusts
+        if: env.DEBLOATER_KEYSTORE != ''
+        env:
+          DEBLOATER_KEYSTORE_PASSWORD: ${{ secrets.DEBLOATER_KEYSTORE_PASSWORD }}
+        run: |
+          keytool -exportcert -keystore "$DEBLOATER_KEYSTORE" -alias debloater \
+            -storepass:env DEBLOATER_KEYSTORE_PASSWORD -file "$RUNNER_TEMP/cert.der"
+          actual=$(sha256sum "$RUNNER_TEMP/cert.der" | cut -d' ' -f1)
+          expected=$(tr -d '[:space:]' < tool/trusted_signer.sha256)
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::The signing key's fingerprint ($actual) doesn't match tool/trusted_signer.sha256 ($expected). Put the right fingerprint in that file."
+            exit 1
           fi
 
       - name: Build
@@ -51,21 +71,109 @@ jobs:
 
       - name: Remove signing key
         if: always()
-        run: rm -f "$RUNNER_TEMP/debloater.jks"
+        run: rm -f "$RUNNER_TEMP/debloater.jks" "$RUNNER_TEMP/cert.der"
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
-          name: honor-pad-8-debloater-apk
+          name: apk
           path: honor-pad-8-debloater.apk
 
-      - name: Publish to the "latest" release
+  # ------------------------------------------------- the setup tool, packaged per OS
+  tool:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows
+          - os: macos-latest
+            label: macOS
+          - os: ubuntu-latest
+            label: Linux
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      # Every package (and its dependencies) is pinned to an exact version and file hash, so a
+      # compromised upstream release can't end up inside the tool people download.
+      - name: Install the packager
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes --only-binary :all: -r tool/requirements-build.txt
+
+      - name: Record where updates come from
+        shell: bash
+        run: |
+          printf '{"repo": "%s", "version": "1.0.%s"}\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_NUMBER" > tool/build_info.json
+          cat tool/build_info.json
+
+      - name: Package
+        shell: bash
+        run: |
+          sep=":"; mode="--onefile"
+          [ "$RUNNER_OS" = "Windows" ] && sep=";"
+          [ "$RUNNER_OS" = "macOS" ] && mode="--onedir"
+          python -m PyInstaller --noconfirm --clean $mode --windowed --name HonorPad8Debloater-Setup \
+            --add-data "tool/trusted_signer.sha256${sep}." --add-data "tool/build_info.json${sep}." \
+            --hidden-import certifi tool/debloater_setup.py
+
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir out
+          case "$RUNNER_OS" in
+            Windows) cp dist/HonorPad8Debloater-Setup.exe out/HonorPad8Debloater-Setup-Windows.exe ;;
+            macOS)   (cd dist && ditto -c -k --keepParent HonorPad8Debloater-Setup.app ../out/HonorPad8Debloater-Setup-macOS.zip) ;;
+            Linux)   cp dist/HonorPad8Debloater-Setup out/HonorPad8Debloater-Setup-Linux && chmod +x out/HonorPad8Debloater-Setup-Linux ;;
+          esac
+
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: tool-${{ matrix.label }}
+          path: out/*
+
+  # ------------------------------------------------------------------- the release
+  release:
+    needs: [apk, tool]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to publish the release
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release v1.0.N
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest honor-pad-8-debloater.apk \
-            --target "${{ github.sha }}" \
-            --title "Honor Pad 8 Debloater build ${{ github.run_number }}" \
-            --notes "Install and setup guide: see the README." \
-            --prerelease
+          tag="v1.0.${GITHUB_RUN_NUMBER}"
+          # Older builds used one rolling release called "latest"; remove it so it can't be confused with this one.
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          # If this build is being re-run, replace its own earlier (possibly partial) release.
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          cat > notes.md <<EOF
+          **Start here:** download the setup tool for your computer, run it, and follow the steps.
+
+          | Your computer | Download |
+          |---|---|
+          | Windows | \`HonorPad8Debloater-Setup-Windows.exe\` |
+          | Mac (Apple silicon) | \`HonorPad8Debloater-Setup-macOS.zip\` |
+          | Linux | \`HonorPad8Debloater-Setup-Linux\` |
+
+          The tool installs (or updates) \`honor-pad-8-debloater.apk\` on the tablet for you. \`SHA256SUMS.txt\` lists every file's checksum.
+          Full guide: see the README.
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "Honor Pad 8 Debloater $tag" \
+            --notes-file notes.md --latest
