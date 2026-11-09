@@ -1,3 +1,0 @@
-# Apps that can't (or shouldn't) be hidden, but whose runtime permissions
-# (location, camera, contacts, storage, phone...) are locked to "denied".
-com.hihonor.id
