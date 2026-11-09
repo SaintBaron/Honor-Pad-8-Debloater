@@ -41,7 +41,11 @@ class BootReceiver : BroadcastReceiver() {
         Thread {
             try {
                 // No wiping here: a boot broadcast only has a few seconds. The run 5 minutes later wipes.
-                Enforcer(context).enforce(trigger, wipe = false)
+                val e = Enforcer(context)
+                e.enforce(trigger, wipe = false)
+                // Read it all back. Problems are only reported if the run 5 minutes later still finds them.
+                val problems = e.checkup(trigger, notify = false)
+                if (trigger == "boot") e.recordBootCheck(problems) else e.catchUpIfBootMissed(trigger, problems)
             } catch (e: Exception) {
                 Store(context).log("[$trigger] crashed: $e")
             } finally {
@@ -73,7 +77,9 @@ class EnforceJob : JobService() {
         }
         Thread {
             try {
-                Enforcer(this).enforce(trigger)
+                val e = Enforcer(this)
+                e.enforce(trigger)
+                if (e.isOwner()) e.catchUpIfBootMissed(trigger, e.checkup(trigger))
             } catch (e: Exception) {
                 Store(this).log("[$trigger] crashed: $e")
             } finally {

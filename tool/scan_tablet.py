@@ -6,8 +6,12 @@ Lists every package installed on the tablet and everything running on it right n
 (app processes, background services and native system processes), sorts them into
 "already handled", "core, leave alone" and "worth a look", and writes a full report.
 
-It only reads: it runs `ps`, `dumpsys`, `pm list` and `getprop` over adb and changes
-nothing on the tablet. Nothing is sent anywhere.
+It also reads Android's settings, feature flags, scheduled jobs and alarms, battery-saving
+exemptions, network policy and device policies, and flags anything worth a look.
+
+It only reads: it runs `ps`, `dumpsys`, `settings list`, `device_config list`, `pm list`,
+`ime list` and `getprop` over adb and changes nothing on the tablet. Nothing is sent anywhere.
+Values that could identify you or the tablet (IDs, names, addresses, network names) are hidden.
 
 Run it with the tablet plugged in and USB debugging on:
     python3 scan_tablet.py
@@ -16,6 +20,7 @@ Options:
     --serial SERIAL     which device, if more than one is connected
     --include-my-apps   also name the apps you installed yourself (off by default, for privacy)
     --list              print only the package names worth a look, one per line
+    --skip-settings     skip the settings, schedules and policies part (faster)
 """
 from __future__ import annotations
 
@@ -44,7 +49,7 @@ CORE_PACKAGES = {
     "com.google.android.permissioncontroller", "com.google.android.packageinstaller",
     "com.google.android.ext.services", "com.google.android.networkstack", "com.google.android.documentsui",
     "com.google.android.providers.media.module",
-    "com.hihonor.android.internal.app", "com.hihonor.android.launcher",
+    "com.hihonor.android.internal.app",
     "com.hihonor.systemserver", "com.hihonor.securityserver", "com.hihonor.securitypluginbase",
     "com.hihonor.permissioncontroller.overlay", "com.hihonor.keychain", "com.hihonor.ouc",
     "com.hihonor.iaware", "com.hihonor.powergenie", "com.hihonor.msdp", "com.hihonor.bluetooth",
@@ -373,6 +378,7 @@ class Scan:
     native: List[Process]
     categories: Dict[str, str]
     catalogue: Dict[str, Entry]
+    system: Optional["SystemState"] = None
 
 
 def attribute(packages: Dict[str, Package], procs: List[Process],
@@ -405,7 +411,7 @@ def attribute(packages: Dict[str, Package], procs: List[Process],
     return act, native
 
 
-def run_scan(adb: ds.Adb, progress=print) -> Scan:
+def run_scan(adb: ds.Adb, progress=print, settings: bool = True) -> Scan:
     info = ds.read_tablet_info(adb)
     tablet = " ".join(x for x in (info.brand, info.model) if x) + (f", Android {info.android}" if info.android else "")
 
@@ -434,8 +440,327 @@ def run_scan(adb: ds.Adb, progress=print) -> Scan:
     cat = load_catalogue()
     activity, native = attribute(packages, procs, services)
     categories = {name: categorise(p, cat) for name, p in packages.items()}
+    system = read_system_state(adb, progress) if settings else None
     return Scan(datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), tablet, owner, version,
-                packages, activity, native, categories, cat)
+                packages, activity, native, categories, cat, system)
+
+
+# =============================================================================
+# Settings, schedules and policies (read-only)
+# =============================================================================
+#
+# Read with `settings list`, `device_config list`, `dumpsys jobscheduler|alarm|deviceidle|netpolicy|device_policy`,
+# `cmd package resolve-activity` and `ime list`. Values that could identify the tablet or you (IDs, names,
+# addresses, network names, account details, long tokens) are replaced with [hidden] before anything is written.
+
+SETTINGS_NAMESPACES = ("global", "secure", "system")
+
+# Keys whose values are always hidden: they name or identify the tablet, you, your networks or accounts.
+SENSITIVE_KEY_RE = re.compile(
+    r"android_id|bluetooth_(name|address|addr)|device_name|serial|imei|meid|iccid|imsi|account|e?mail|ssid|"
+    r"password|passwd|token|secret|credential|owner_info|lockscreen\.options|nickname|user_?name|phone|msisdn|"
+    r"latitude|longitude|_mac\b|\bmac_|address|cookie|session|uuid|guid|device_id|_key$|^key_|hotspot|wifi_ap|"
+    r"tether|custom_labels|fingerprint|face|calendar|contact|location_history|home_?address|cert|hash|configkey|"
+    r"_ap_|_ap$|\bap_|network_?name|wifi_?name|router",
+    re.I)
+# Values hidden wherever they appear: e-mail addresses, MAC addresses, UUIDs, long hex/base64 strings,
+# long numbers and map coordinates.
+SENSITIVE_VALUE_RES = [
+    re.compile(r"\S+@\S+\.\S+"),
+    re.compile(r"\b([0-9a-f]{2}[:-]){5}[0-9a-f]{2}\b", re.I),
+    re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I),
+    re.compile(r"[0-9a-f]{16,}", re.I),
+    re.compile(r"[A-Za-z0-9+/=_-]{32,}"),
+    re.compile(r"\d{10,}"),
+    re.compile(r"-?\d{1,3}\.\d{4,}"),
+    # a Wi-Fi network as Android writes it: "Name" followed by its security type
+    re.compile(r'"[^"]*"\s*(SAE|WPA|PSK|WEP|OPEN|NONE|EAP|OWE|SUITE_B|WAPI)', re.I),
+]
+MAX_VALUE = 160
+
+
+def redact(key: str, value: str) -> str:
+    value = clean(value)
+    if not value or value == "null":
+        return value
+    if SENSITIVE_KEY_RE.search(key):
+        return "[hidden]"
+    if any(r.search(value) for r in SENSITIVE_VALUE_RES):
+        return "[hidden]"
+    if len(value) > MAX_VALUE:
+        return f"[long value, {len(value)} characters]"
+    return value
+
+
+def parse_settings(text: str) -> Dict[str, str]:
+    """`settings list <namespace>` output: key=value per line (values may contain '=')."""
+    out: Dict[str, str] = {}
+    for line in text.splitlines():
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        k = k.strip()
+        if k and re.fullmatch(r"[\w.:\-/]+", k):
+            out[k] = v.strip()
+    return out
+
+
+def parse_device_config(text: str) -> Dict[str, Dict[str, str]]:
+    """`device_config list`: namespace/key=value per line -> {namespace: {key: value}}."""
+    out: Dict[str, Dict[str, str]] = {}
+    for line in text.splitlines():
+        m = re.match(r"^([\w.\-]+)/([^=\s]+)=(.*)$", line.strip())
+        if m:
+            out.setdefault(m.group(1), {})[m.group(2)] = m.group(3)
+    return out
+
+
+JOB_RE = re.compile(r"^\s*JOB #\S+/(-?\d+): [0-9a-f]+ ([A-Za-z][\w.]*)/(\S+)")
+
+
+def parse_jobs(text: str) -> Dict[str, List[str]]:
+    """`dumpsys jobscheduler`: the registered jobs -> {package: [job id/service, ...]}."""
+    out: Dict[str, List[str]] = {}
+    seen = set()
+    for line in text.splitlines():
+        m = JOB_RE.match(line)
+        if m and (m.group(2), m.group(1)) not in seen:
+            seen.add((m.group(2), m.group(1)))
+            out.setdefault(m.group(2), []).append(f"{m.group(1)}:{m.group(3)}")
+    return out
+
+
+ALARM_RE = re.compile(r"Alarm\{[0-9a-f]+ type -?\d+ (?:origWhen \S+ )?(?:whenElapsed \S+ )?([A-Za-z]\w*(?:\.\w+)*)")
+
+
+def parse_alarms(text: str) -> Dict[str, int]:
+    """`dumpsys alarm`: pending alarms per package."""
+    out: Dict[str, int] = {}
+    for m in ALARM_RE.finditer(text):
+        out[m.group(1)] = out.get(m.group(1), 0) + 1
+    return out
+
+
+def parse_doze_whitelist(text: str) -> Dict[str, str]:
+    """`dumpsys deviceidle whitelist`: kind,package,uid per line -> {package: kind}."""
+    out: Dict[str, str] = {}
+    for line in text.splitlines():
+        parts = line.strip().split(",")
+        if len(parts) >= 2 and parts[0] in ("system-excidle", "system", "user") and re.fullmatch(r"[\w.]+", parts[1]):
+            # "system" beats "system-excidle" (exempt from more)
+            if out.get(parts[1]) != "system":
+                out[parts[1]] = parts[0]
+    return out
+
+
+def parse_netpolicy(text: str) -> Tuple[Optional[bool], Dict[int, str]]:
+    """`dumpsys netpolicy`: whether background data is restricted overall, and per-UID policies."""
+    restrict = None
+    m = re.search(r"Restrict background:\s*(true|false)", text)
+    if m:
+        restrict = m.group(1) == "true"
+    uids: Dict[int, str] = {}
+    for m in re.finditer(r"UID=(\d+) policy=(\d+)(?: \(([^)]*)\))?", text):
+        if m.group(2) != "0":
+            uids[int(m.group(1))] = m.group(3) or f"policy {m.group(2)}"
+    return restrict, uids
+
+
+def parse_device_policy(text: str, admin_pkg: str) -> Tuple[List[str], Optional[str], Optional[str]]:
+    """`dumpsys device_policy`: user restrictions set by [admin_pkg]'s admin, and its permitted keyboards/accessibility."""
+    lines = text.splitlines()
+    block: List[str] = []
+    for i, line in enumerate(lines):
+        if re.match(r"^\s+" + re.escape(admin_pkg) + r"/[\w.$]+:\s*$", line):
+            indent = len(line) - len(line.lstrip())
+            for nxt in lines[i + 1:]:
+                if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= indent:
+                    break
+                block.append(nxt)
+            break
+    body = "\n".join(block)
+    restrictions = sorted(set(re.findall(r"\b(no_[a-z_]+|disallow_[a-z_]+)\b", body)))
+    ime = re.search(r"permittedInputMethods=(\S.*)", body)
+    a11y = re.search(r"permittedAccess[a-z]*Services=(\S.*)", body)
+    return restrictions, (ime.group(1).strip() if ime else None), (a11y.group(1).strip() if a11y else None)
+
+
+def parse_resolved_component(text: str) -> Optional[str]:
+    lines = [l.strip() for l in text.splitlines() if re.fullmatch(r"[\w.]+/[\w.$]+", l.strip())]
+    return lines[-1] if lines else None
+
+
+# Settings with a privacy-friendlier value, and where to change them (the app can't: Android doesn't let
+# device owners change these).
+KNOWN_SETTINGS = [
+    ("global", "wifi_scan_always_enabled", "0", "Wi-Fi scanning for location, even with Wi-Fi off",
+     "Settings > Location > Wi-Fi scanning"),
+    ("global", "ble_scan_always_enabled", "0", "Bluetooth scanning for location, even with Bluetooth off",
+     "Settings > Location > Bluetooth scanning"),
+    ("global", "network_recommendations_enabled", "0", "Sends Wi-Fi network details to a rating service",
+     "Settings > Wi-Fi > Wi-Fi preferences"),
+    ("global", "wifi_wakeup_enabled", "0", "Turns Wi-Fi back on by itself near saved networks",
+     "Settings > Wi-Fi > Wi-Fi preferences"),
+    ("secure", "assist_structure_enabled", "0", "Lets the assistant app read what's on screen",
+     "Settings > Apps > Default apps > Assist"),
+    ("secure", "assist_screenshot_enabled", "0", "Lets the assistant app take screenshots",
+     "Settings > Apps > Default apps > Assist"),
+    ("secure", "lock_screen_allow_private_notifications", "0", "Notification text on the lock screen",
+     "the app: Privacy and security > Hide notification text on the lock screen"),
+    ("global", "upload_apk_enable", "0", "Play Protect sends copies of apps that didn't come from the Play Store "
+     "(F-Droid apps, this debloater) to Google", "Play Store > your profile > Play Protect > settings (gear) > "
+     "Improve harmful app detection"),
+    ("global", "hn_wifipro_enable", "false", "HONOR's Wi-Fi+: tests connections by contacting outside servers "
+     "(including baidu.com) and switches networks by itself", "Settings > Wi-Fi > More settings > Wi-Fi+"),
+    ("secure", "location_honor_ads", "0", "HONOR's consent for location-based ads", "unknown: HONOR's location "
+     "service is removed, so it has nothing to use"),
+    ("global", "development_settings_enabled", "0", "Developer options are on",
+     "Settings > System > Developer options (switch it off when you're done)"),
+    ("global", "adb_enabled", "0", "USB debugging is on (needed for this scan)",
+     "turn it off afterwards, or the app's Block USB debugging"),
+]
+# Settings that sound like data collection but are safety features worth keeping on.
+FINE_SETTINGS = {"report_unfamiliar_bluetooth_tag"}
+VENDOR_KEY_RE = re.compile(r"hn_|honor|hihonor|huawei|\bhw_|hiview|hicloud|yoyo|petal|magic_", re.I)
+TELEMETRY_KEY_RE = re.compile(
+    r"user_?experience|ux_?plan|improve|upload|analytic|telemetry|diagnos|feedback|crash|statistic|collect|"
+    r"personali[sz]|recommend|advert|(^|_)ads?(_|$)|push|report|track|smart_?(suggest|reminder|service)|assist|nearby", re.I)
+TRUTHY = {"1", "true", "on", "enabled", "yes"}
+
+
+@dataclass
+class SystemState:
+    settings: Dict[str, Dict[str, str]] = field(default_factory=dict)   # namespace -> key -> raw value
+    device_config: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    jobs: Dict[str, List[str]] = field(default_factory=dict)
+    alarms: Dict[str, int] = field(default_factory=dict)
+    doze_exempt: Dict[str, str] = field(default_factory=dict)
+    restrict_background: Optional[bool] = None
+    uid_policies: Dict[int, str] = field(default_factory=dict)
+    restrictions: List[str] = field(default_factory=list)
+    permitted_ime: Optional[str] = None
+    permitted_a11y: Optional[str] = None
+    home: Optional[str] = None
+    keyboards: List[str] = field(default_factory=list)
+    read_errors: List[str] = field(default_factory=list)
+
+
+def read_system_state(adb: ds.Adb, progress=print) -> SystemState:
+    st = SystemState()
+
+    def shell(cmd: str, timeout: int = 90) -> str:
+        rc, text = adb.shell(cmd, quiet=True, timeout=timeout)
+        if rc != 0 and not text.strip():
+            st.read_errors.append(cmd)
+        return text
+
+    progress("Reading settings…")
+    for ns in SETTINGS_NAMESPACES:
+        st.settings[ns] = parse_settings(shell(f"settings list {ns}"))
+    st.device_config = parse_device_config(shell("device_config list"))
+    progress("Reading scheduled jobs, alarms and battery exemptions…")
+    st.jobs = parse_jobs(shell("dumpsys jobscheduler", timeout=120))
+    st.alarms = parse_alarms(shell("dumpsys alarm", timeout=120))
+    st.doze_exempt = parse_doze_whitelist(shell("dumpsys deviceidle whitelist"))
+    st.restrict_background, st.uid_policies = parse_netpolicy(shell("dumpsys netpolicy"))
+    progress("Reading device policies…")
+    st.restrictions, st.permitted_ime, st.permitted_a11y = parse_device_policy(shell("dumpsys device_policy"), SELF)
+    st.home = parse_resolved_component(
+        shell("cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME"))
+    st.keyboards = [l.strip() for l in shell("ime list -s").splitlines() if re.fullmatch(r"[\w.]+/[\w.$]+", l.strip())]
+    return st
+
+
+def settings_worth_a_look(st: SystemState) -> List[Tuple[str, str, str, str, str]]:
+    """(namespace, key, value, why, where to change it), known privacy settings first, then HONOR's own switches
+    and telemetry-sounding ones that are on."""
+    out = []
+    known = set()
+    for ns, key, good, why, where in KNOWN_SETTINGS:
+        known.add((ns, key))
+        v = st.settings.get(ns, {}).get(key)
+        if v is not None and v != good:
+            out.append((ns, key, redact(key, v), why, where))
+    for ns in SETTINGS_NAMESPACES:
+        for key, v in sorted(st.settings.get(ns, {}).items()):
+            if (ns, key) in known or key in FINE_SETTINGS or v.strip().lower() not in TRUTHY:
+                continue
+            vendor = bool(VENDOR_KEY_RE.search(key))
+            telem = bool(TELEMETRY_KEY_RE.search(key))
+            if vendor and telem:
+                out.append((ns, key, v, "An HONOR switch that sounds like data collection, and it's on", "unknown: tell me and I'll look it up"))
+            elif telem:
+                out.append((ns, key, v, "Sounds like data collection or suggestions, and it's on", "unknown: tell me and I'll look it up"))
+    return out
+
+
+def background_schedules(scan: Scan) -> List[Tuple[str, int, int, str]]:
+    """Packages with scheduled jobs or alarms that aren't core: (package, jobs, alarms, category)."""
+    st = scan.system
+    if st is None:
+        return []
+    pkgs = (set(st.jobs) | set(st.alarms)) & set(scan.packages)
+    rows = []
+    for p in pkgs:
+        cat = scan.categories.get(p, "core" if is_core(p) or p == "android" else "system")
+        if cat in ("core", "self") or p == "android":
+            continue
+        if cat == "mine":
+            continue
+        rows.append((p, len(st.jobs.get(p, [])), st.alarms.get(p, 0), cat))
+    return sorted(rows, key=lambda r: (r[3] not in ("look", "listed", "optional"), -(r[1] + r[2]), r[0]))
+
+
+def hidden_but_running(scan: Scan) -> List[str]:
+    """Hidden or paused packages that still have a process or a service: something (usually the system) keeps
+    starting them."""
+    return sorted(n for n, p in scan.packages.items()
+                  if (p.hidden or p.suspended) and n in scan.activity and scan.activity[n].running
+                  and bool(scan.activity[n].procs))
+
+
+def doze_exempt_vendor(scan: Scan) -> List[Tuple[str, str]]:
+    st = scan.system
+    if st is None:
+        return []
+    return sorted((p, k) for p, k in st.doze_exempt.items() if is_vendor(p) and not is_core(p))
+
+
+EXPECTED_RESTRICTIONS = {"no_add_user": "Block adding users", "no_content_capture": "Block screen-reading AI",
+                         "no_content_suggestions": "Block screen-reading AI"}
+
+
+def debloater_state(scan: Scan) -> List[Tuple[str, str, bool]]:
+    """(what, finding, ok) about the debloater's own checks and policies, as the tablet reports them."""
+    st = scan.system
+    if st is None or not is_owner(scan):
+        return []
+    rows = []
+    mine = st.jobs.get(SELF, [])
+    ids = {j.split(":")[0] for j in mine}
+    rows.append(("6-hourly check", "scheduled" if "1" in ids else "NOT scheduled: open the app once to set it up again", "1" in ids))
+    rows.append(("Daily app updates", "scheduled" if "3" in ids else "not scheduled", "3" in ids))
+    uid = scan.packages[SELF].uid if SELF in scan.packages else None
+    policy = st.uid_policies.get(uid) if uid is not None else None
+    rows.append(("Background data for the app", f"restricted ({policy})" if policy else "allowed (as far as Android's own setting goes)", not policy))
+    exempt = st.doze_exempt.get(SELF)
+    rows.append(("Battery saving", f"exempt ({exempt})" if exempt else "not exempt: checks may be delayed while the tablet sleeps", True))
+    for r, label in EXPECTED_RESTRICTIONS.items():
+        rows.append((f"Restriction {r}", "in force" if r in st.restrictions else "not set (on by default; check Privacy and security)", r in st.restrictions))
+    others = [r for r in st.restrictions if r not in EXPECTED_RESTRICTIONS]
+    if others:
+        rows.append(("Other restrictions in force", ", ".join(others), True))
+    if st.permitted_ime is not None:
+        rows.append(("Keyboards allowed", st.permitted_ime, True))
+    if st.home:
+        rows.append(("Home screen", st.home, True))
+    if st.keyboards:
+        rows.append(("Keyboards switched on", ", ".join(st.keyboards), True))
+    dns_mode = st.settings.get("global", {}).get("private_dns_mode")
+    if dns_mode:
+        host = st.settings.get("global", {}).get("private_dns_specifier", "")
+        rows.append(("Private DNS", f"{dns_mode} {host}".strip(), True))
+    return rows
 
 
 # =============================================================================
@@ -515,6 +840,42 @@ def summary_text(scan: Scan) -> str:
                 lines.append(f"  {n:<40} {short_name(scan, n)}")
         else:
             lines.append(f"{len(stuck)} apps on the default list are still active, because the debloater isn't set up yet.")
+    if scan.system is not None:
+        st = scan.system
+        look_settings = settings_worth_a_look(st)
+        lines.append("")
+        lines.append(f"Settings worth a look ({len(look_settings)}):")
+        if not look_settings:
+            lines.append("  Nothing stands out.")
+        for ns, key, v, why, _where in look_settings:
+            lines.append(f"  {ns}/{key} = {v}  ({why})")
+        sched = [r for r in background_schedules(scan) if r[3] in ("look", "listed", "optional") and scan.packages[r[0]].active]
+        lines.append("")
+        lines.append(f"Active vendor and listed apps with scheduled background work ({len(sched)}):")
+        if not sched:
+            lines.append("  None outside the core and your own apps.")
+        for p, j, a, cat in sched[:15]:
+            lines.append(f"  {p:<40} {j} job{'s' if j != 1 else ''}, {a} alarm{'s' if a != 1 else ''}  [{CATEGORY_TITLES[cat].split(':')[0]}]")
+        hbr = hidden_but_running(scan)
+        if hbr:
+            lines.append("")
+            lines.append(f"Hidden, but still running ({len(hbr)}): the system keeps starting these. Set to Remove, the "
+                         "debloater also locks their permissions.")
+            for n in hbr:
+                lines.append(f"  {n:<40} {short_name(scan, n)}  running: {scan.activity[n].describe()}")
+        exempt = doze_exempt_vendor(scan)
+        if exempt:
+            lines.append("")
+            lines.append(f"HONOR apps allowed to ignore battery saving ({len(exempt)}): " + ", ".join(p for p, _ in exempt))
+        state = debloater_state(scan)
+        if state:
+            lines.append("")
+            lines.append("The debloater, as the tablet reports it:")
+            for what, finding, ok in state:
+                lines.append(f"  {'ok ' if ok else '!! '} {what}: {finding}")
+        if st.read_errors:
+            lines.append("")
+            lines.append("Couldn't read: " + ", ".join(st.read_errors))
     vend_native = sorted({p.name for p in scan.native if VENDOR_NATIVE_RE.search(p.name)})
     if vend_native:
         lines.append("")
@@ -525,6 +886,92 @@ def summary_text(scan: Scan) -> str:
 
 def _md_escape(s: str) -> str:
     return s.replace("|", "\\|")
+
+
+def system_markdown(scan: Scan, include_my_apps: bool) -> List[str]:
+    st = scan.system
+    out: List[str] = []
+    look = settings_worth_a_look(st)
+    out += ["## Settings worth a look", "",
+            "Privacy-related settings that aren't at their privacy-friendlier value, then any other setting that "
+            "sounds like data collection and is on. Values that could identify you or the tablet are hidden.", ""]
+    if look:
+        out += ["| Setting | Value | What it does | Where to change it |", "|---|---|---|---|"]
+        for ns, key, v, why, where in look:
+            out.append(f"| `{ns}/{key}` | `{_md_escape(v)}` | {_md_escape(why)} | {_md_escape(where)} |")
+    else:
+        out.append("Nothing stands out.")
+    out.append("")
+
+    rows = background_schedules(scan)
+    out += ["## Scheduled background work", "",
+            "Apps that have asked Android to wake them later (jobs) or at set times (alarms). Core parts and your "
+            "own apps are left out. A hidden app's jobs can stay listed, but Android won't run them while it's hidden.", ""]
+    if rows:
+        out += ["| Package | State | Jobs | Alarms | Category | What it is |", "|---|---|---|---|---|---|"]
+        for p, j, a, cat in rows:
+            out.append(f"| `{p}` | {scan.packages[p].state()} | {j} | {a} | {CATEGORY_TITLES[cat].split(':')[0]} | {_md_escape(describe(scan, p))} |")
+    else:
+        out.append("None.")
+    out.append("")
+
+    hbr = hidden_but_running(scan)
+    out += ["## Hidden, but still running", "",
+            "Hidden or paused apps with a process running right now. Something (usually HONOR's system) keeps "
+            "starting them. They can't show anything, and when they're set to Remove the debloater also locks "
+            "their permissions, so they can't use location, the camera, contacts and so on.", ""]
+    if hbr:
+        out += ["| Package | Running | What it is |", "|---|---|---|"]
+        for n in hbr:
+            svcs = ", ".join(s.rsplit(".", 1)[-1] for s in scan.activity[n].services) or "-"
+            out.append(f"| `{n}` | {scan.activity[n].describe()}: {_md_escape(svcs)} | {_md_escape(describe(scan, n))} |")
+    else:
+        out.append("None.")
+    out.append("")
+
+    exempt = sorted(st.doze_exempt.items())
+    out += ["## Allowed to ignore battery saving", "",
+            "Apps Android lets run while the tablet sleeps. `system` ones are built in; `user` ones were allowed in "
+            "Settings.", ""]
+    if exempt:
+        out += ["| Package | Kind | Category |", "|---|---|---|"]
+        for p, kind in exempt:
+            cat = scan.categories.get(p, "")
+            if cat == "mine" and not include_my_apps:
+                continue
+            out.append(f"| `{p}` | {kind} | {CATEGORY_TITLES[cat].split(':')[0] if cat else ''} |")
+    else:
+        out.append("None reported.")
+    out.append("")
+
+    state = debloater_state(scan)
+    if state:
+        out += ["## The debloater, as the tablet reports it", "", "| | | |", "|---|---|---|"]
+        for what, finding, ok in state:
+            out.append(f"| {'✓' if ok else '⚠'} | {_md_escape(what)} | {_md_escape(finding)} |")
+        out.append("")
+
+    out += ["## Every setting", "",
+            "Everything in Android's three settings tables. Values that could identify you or the tablet are "
+            "replaced with [hidden].", ""]
+    for ns in SETTINGS_NAMESPACES:
+        items = st.settings.get(ns, {})
+        out += [f"<details><summary>{ns} ({len(items)})</summary>", "", "| Setting | Value |", "|---|---|"]
+        for k, v in sorted(items.items()):
+            out.append(f"| `{_md_escape(clean(k))}` | `{_md_escape(redact(k, v))}` |")
+        out += ["", "</details>", ""]
+
+    out += ["## Feature flags", "",
+            "Server-controlled switches (`device_config`), by area. They're set by Google and HONOR, not by you.", ""]
+    for ns in sorted(st.device_config):
+        items = st.device_config[ns]
+        out += [f"<details><summary>{_md_escape(clean(ns))} ({len(items)})</summary>", "", "| Flag | Value |", "|---|---|"]
+        for k, v in sorted(items.items()):
+            out.append(f"| `{_md_escape(clean(k))}` | `{_md_escape(redact(k, v))}` |")
+        out += ["", "</details>", ""]
+    if st.read_errors:
+        out += ["Couldn't read: " + ", ".join(f"`{e}`" for e in st.read_errors), ""]
+    return out
 
 
 def markdown_report(scan: Scan, include_my_apps: bool) -> str:
@@ -545,6 +992,9 @@ def markdown_report(scan: Scan, include_my_apps: bool) -> str:
         out += ["", "Paste-ready (for the app's Advanced > Remove or Hide list):", "", "```"] + look + ["```", ""]
     else:
         out += ["Nothing.", ""]
+
+    if scan.system is not None:
+        out += system_markdown(scan, include_my_apps)
 
     out += ["## Running app processes", "",
             "| Package | Category | Processes | Services | Memory |", "|---|---|---|---|---|"]
@@ -638,10 +1088,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--serial", help="which device, if more than one is connected")
     ap.add_argument("--include-my-apps", action="store_true", help="also name the apps you installed yourself")
     ap.add_argument("--list", action="store_true", help="print only the package names worth a look")
+    ap.add_argument("--skip-settings", action="store_true",
+                    help="don't read settings, feature flags, schedules and policies (faster)")
     args = ap.parse_args(argv)
 
     adb = connect(args.serial)
-    scan = run_scan(adb, progress=(lambda _m: None) if args.list else (lambda m: print(m, file=sys.stderr)))
+    scan = run_scan(adb, progress=(lambda _m: None) if args.list else (lambda m: print(m, file=sys.stderr)),
+                    settings=not (args.list or args.skip_settings))
     if args.list:
         print("\n".join(worth_a_look(scan)))
         return 0

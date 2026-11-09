@@ -880,6 +880,45 @@ def installed_version(adb: Adb) -> Optional[int]:
     return parse_version_code(out)
 
 
+# Settings only the user can change (Android doesn't let apps change them). Each: id, title, why, button label,
+# the command that opens the right screen on the tablet, and a read-only command whose output says whether it's done.
+PRIVACY_TODOS = [
+    ("screenlock", "Set a screen lock",
+     "A PIN, pattern or password. Without one, anyone who picks up the tablet gets straight in, and hiding "
+     "notification text on the lock screen can't work.",
+     "Open on the tablet", "am start -a android.app.action.SET_NEW_PASSWORD", "dumpsys lock_settings"),
+    ("playprotect", "Stop Play Protect sending your apps to Google",
+     "In Play Protect's settings (the gear), turn off \"Improve harmful app detection\". It uploads copies of apps "
+     "that didn't come from the Play Store, including F-Droid apps and the debloater. Leave \"Scan apps with "
+     "Play Protect\" on.",
+     "Open on the tablet",
+     "am start -n com.google.android.gms/.security.settings.VerifyAppsSettingsActivity || "
+     "monkey -p com.android.vending -c android.intent.category.LAUNCHER 1",
+     "settings get global upload_apk_enable"),
+    ("wifiplus", "Turn off HONOR's Wi-Fi+",
+     "Settings > Wi-Fi > More settings (or the \u22ee menu) > Wi-Fi+. It tests your connection by contacting outside "
+     "servers, including baidu.com, and switches networks by itself.",
+     "Open on the tablet", "am start -a android.settings.WIFI_SETTINGS", "settings get global hn_wifipro_enable"),
+]
+
+
+def privacy_todo_done(todo_id: str, output: str) -> Optional[bool]:
+    """Read the check command's output: True = done, False = still to do, None = can't tell."""
+    out = (output or "").strip()
+    if todo_id == "screenlock":
+        m = re.search(r"Credential ?Type:\s*(\w+)", out, re.I)
+        if not m:
+            return None
+        return m.group(1).upper() not in ("NONE", "-1")
+    if todo_id == "playprotect":
+        return {"0": True, "1": False}.get(out)
+    if todo_id == "wifiplus":
+        if out in ("false", "0", "null", ""):
+            return True   # off, or this firmware doesn't have it
+        return False if out in ("true", "1") else None
+    return None
+
+
 def current_device_owner(adb: Adb) -> Optional[str]:
     _, out = adb.shell("dpm list-owners", quiet=True)
     owner = parse_device_owner(out)
@@ -1121,6 +1160,7 @@ def main() -> None:
                 ("Install the app", self.step_install),
                 ("Remove accounts", self.step_accounts),
                 ("Make it device owner", self.step_owner),
+                ("Privacy settings", self.step_privacy),
                 ("Finish on the tablet", self.step_finish),
             ]
             self.side_labels = []
@@ -1933,6 +1973,62 @@ def main() -> None:
             btn.configure(command=go)
 
         # --------------------------------------------------------------- finish
+        def step_privacy(self) -> None:
+            self.para("Settings only you can change: Android doesn't let apps change them. Each button opens the right "
+                      "screen on the tablet. They're optional, and the app shows the same list until they're done.")
+            top = ttk.Frame(self.body)
+            top.pack(anchor="w", fill="x", pady=(0, 4))
+            check_btn = ttk.Button(top, text="Check again")
+            check_btn.pack(side="left")
+            summary = ttk.Label(top, text="", font=self.f_head)
+            summary.pack(side="left", padx=(12, 0))
+            rows = []
+            for todo_id, title, why, button, open_cmd, check_cmd in PRIVACY_TODOS:
+                box = ttk.Frame(self.body)
+                box.pack(anchor="w", fill="x", pady=(6, 2))
+                head = ttk.Frame(box)
+                head.pack(anchor="w", fill="x")
+                mark = ttk.Label(head, text="…", style="Muted.TLabel", width=8)
+                mark.pack(side="left")
+                ttk.Label(head, text=title, font=self.f_head).pack(side="left")
+                if self.adb and self.adb.serial:
+                    ttk.Button(head, text=button, style="Quiet.TButton",
+                               command=(lambda c=open_cmd: self.background(lambda: self.adb.shell(c), lambda r, e: None))
+                               ).pack(side="right")
+                lbl = ttk.Label(box, text=why, style="Muted.TLabel", justify="left")
+                lbl.pack(anchor="w", padx=(64, 0))
+                self.wrap(lbl, 120)
+                rows.append((todo_id, check_cmd, mark))
+            def check():
+                if not (self.adb and self.adb.serial):
+                    self.set_status(summary, "The tablet isn't connected, so these can't be checked. The app on the "
+                                             "tablet shows the same list.", "warn")
+                    return
+
+                def work():
+                    return [(todo_id, privacy_todo_done(todo_id, self.adb.shell(check_cmd, quiet=True)[1]), mark)
+                            for todo_id, check_cmd, mark in rows]
+
+                def done(results, err):
+                    if err:
+                        self.set_status(summary, f"Couldn't check: {err}", "warn")
+                        return
+                    left = 0
+                    for todo_id, ok, mark in results:
+                        text, style = {True: ("✓ Done", "Good.TLabel"), False: ("To do", "Warn.TLabel"),
+                                       None: ("Check it", "Muted.TLabel")}[ok]
+                        left += ok is not True
+                        try:
+                            mark.configure(text=text, style=style)
+                        except tk.TclError:
+                            pass
+                    self.set_status(summary, "✓ All done." if left == 0 else
+                                    f"{left} left. You can carry on and do them later.", "good" if left == 0 else "")
+                self.background(work, done)
+            check_btn.configure(command=check)
+            check()
+            self.complete()   # optional: never blocks Next
+
         def step_finish(self) -> None:
             if self.was_set_up:
                 self.status("✓ All done. The app is up to date and still in charge.", "good")
@@ -1952,8 +2048,9 @@ def main() -> None:
             items = [
                 ("Sign back in to your Google account (and any others) in Settings > Users & accounts.",
                  "Open accounts", "am start -a android.settings.SYNC_SETTINGS"),
-                ("Open Honor Pad 8 Debloater. It should say \"Protection is on\". If you removed apps with adb "
-                 "before, open Advanced and tap \"Add them to the list\".", "Open the app",
+                ("Open Honor Pad 8 Debloater. It should say \"Protection is on\", and it offers to replace HONOR's "
+                 "home screen and keyboard with Lawnchair and HeliBoard. If you removed apps with adb before, open "
+                 "Advanced and tap \"Add them to the list\".", "Open the app",
                  f"am start -n {PACKAGE}/.MainActivity"),
                 ("Let it run at boot: Settings > Battery > App launch > Honor Pad 8 Debloater. Turn off \"Manage "
                  "automatically\" and turn on all three switches.", "Open battery settings",
@@ -1970,7 +2067,9 @@ def main() -> None:
                 self.wrap(lbl, 300)
             self.para("")
             self.para("That's it. The app now runs by itself at every boot and every 6 hours, and keeps HONOR's apps "
-                      "hidden through system updates. You can turn USB debugging off again.")
+                      "hidden through system updates. Last of all, turn USB debugging off again (Settings > System > "
+                      "Developer options), or switch on \"Block USB debugging\" in the app; switch it back on before "
+                      "using this tool again.")
             self.para("To update the app later, run this tool again: it fetches the newest version and installs it, "
                       "skipping the steps you've already done.")
             self.complete()

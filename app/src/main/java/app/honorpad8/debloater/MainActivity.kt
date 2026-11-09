@@ -3,6 +3,7 @@ package app.honorpad8.debloater
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.DialogInterface
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -48,10 +49,17 @@ class MainActivity : Activity() {
         val version: String,
         val fdroid: String?,                   // installed version, or null
         val lawnchair: String?,
+        val heliboard: String?,
         val settings: Map<String, String>,
         val vpnApps: List<String>,
         val inputApps: List<String>,
         val approved: Set<String>,
+        val inUse: Map<String, String>,          // package -> "keyboard" / "home screen"
+        val keyboard: String?,                    // the keyboard in use
+        val problems: List<String>,               // what the last check found not in place
+        val bootResult: String,                   // "<time>|ok|late|<n> problems", or "" before the first restart
+        val bootMissed: Boolean,                  // restarted since the start-up check last ran
+        val todos: List<Todo>,                    // settings only the user can change
     ) {
         fun setting(key: String, default: String) = settings[key] ?: default
         fun on(key: String) = setting(key, if (key in Hardening.DEFAULT_ON) "on" else "off") == "on"
@@ -63,9 +71,19 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * One setting only the user can change. [detected]: true = it's done, false = it isn't, null = the app can't
+     * tell (then the user marks it done).
+     */
+    class Todo(val id: String, val detected: Boolean?, val marked: Boolean) {
+        val done get() = detected ?: marked
+    }
+
     private class RowRef(val view: View, val divider: View, val haystack: String)
     private class SectionRef(val id: String, val card: View, val body: View, val chevron: TextView?, val rows: List<RowRef>)
 
+    private var catchUpRequested = false
+    private var keyboardBefore: String? = null   // set while the keyboard picker is open
     private lateinit var ui: Ui
     private lateinit var scroll: ScrollView
     private lateinit var page: LinearLayout
@@ -115,7 +133,14 @@ class MainActivity : Activity() {
             val m = try { load() } catch (e: Exception) { null }
             runOnUiThread {
                 if (isDestroyed || gen != loadGeneration) return@runOnUiThread
-                if (m == null) toast("Couldn't read the app's state.") else render(m)
+                if (m == null) toast("Couldn't read the app's state.") else {
+                render(m)
+                // Opened after a restart the start-up check missed: catch up now rather than waiting for the 6-hourly one.
+                if (m.bootMissed && !catchUpRequested) {
+                    catchUpRequested = true
+                    Scheduler.runSoon(this, "opened after a missed start-up check")
+                }
+            }
             }
         }.start()
     }
@@ -130,10 +155,12 @@ class MainActivity : Activity() {
         val hardening = enforcer.hardening()
         val vpnApps = hardening.vpnApps()
         val inputApps = hardening.inputApps()
-        val pkgs = (known + hide + remove + lock + news + vpnApps + inputApps).toSet()
+        val inUse = enforcer.inUse()
+        val pkgs = (known + hide + remove + lock + news + vpnApps + inputApps + inUse.keys).toSet()
         val installer = enforcer.installer()
         val settingKeys = listOf(Store.S_BACKUP_OFF, Store.S_NO_AI_CAPTURE, Store.S_NO_NEW_USERS, Store.S_APPROVE_INPUT,
-            Store.S_REDACT_LOCKSCREEN, Store.S_NO_DEBUGGING, Store.S_DNS, Store.S_VPN, Store.S_LAWNCHAIR_AUTO, Store.S_HOME)
+            Store.S_REDACT_LOCKSCREEN, Store.S_NO_DEBUGGING, Store.S_DNS, Store.S_VPN, Store.S_LAWNCHAIR_AUTO, Store.S_HOME,
+            Store.S_SELF_AUTO, Store.S_HELI_AUTO, Store.S_REPLACE_OFFER)
         @Suppress("DEPRECATION")
         val version = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
         return Model(
@@ -152,10 +179,18 @@ class MainActivity : Activity() {
             version = version,
             fdroid = installer.installedVersionName(Installer.FDROID.pkg),
             lawnchair = installer.installedVersionName(Installer.LAWNCHAIR.pkg),
+            heliboard = installer.installedVersionName(Installer.HELIBOARD.pkg),
             settings = settingKeys.associateWith { store.setting(it, "\u0000") }.filterValues { it != "\u0000" },
             vpnApps = vpnApps,
             inputApps = inputApps,
             approved = hardening.approved(),
+            inUse = inUse,
+            keyboard = inUse.entries.firstOrNull { it.value == "keyboard" }?.key,
+            problems = store.readSet(Store.PROBLEMS).sorted(),
+            bootResult = store.setting(Store.S_BOOT_RESULT, ""),
+            // Give the start-up broadcast a few minutes to arrive before calling it missed.
+            bootMissed = android.os.SystemClock.elapsedRealtime() > 4 * 60_000L && enforcer.bootCheckMissed(),
+            todos = todos(),
         )
     }
 
@@ -245,6 +280,8 @@ class MainActivity : Activity() {
         (search.parent as? LinearLayout)?.removeView(search)
 
         content.addView(statusCard(m), ui.lp(bottom = 12))
+        if (m.owner && m.todos.any { !it.done }) content.addView(todoCard(m), ui.lp(bottom = 12))
+        if (m.owner && m.setting(Store.S_REPLACE_OFFER, "") == "") content.addView(replaceCard(), ui.lp(bottom = 12))
         if (m.news.isNotEmpty()) content.addView(newsCard(m), ui.lp(bottom = 12))
 
         content.addView(search, ui.lp(top = 4, bottom = 8))
@@ -265,7 +302,7 @@ class MainActivity : Activity() {
 
         val foot = if (m.version.isNotEmpty()) "Version ${m.version}. " else ""
         content.addView(
-            ui.muted("${foot}The app only goes online to download F-Droid, Lawnchair and its own updates. Nothing it sees leaves the tablet.", 12f).apply {
+            ui.muted("${foot}The app only goes online to download F-Droid, Lawnchair, HeliBoard and its own updates. Nothing it sees leaves the tablet.", 12f).apply {
                 gravity = Gravity.CENTER
             },
             ui.lp(top = 12)
@@ -317,9 +354,27 @@ class MainActivity : Activity() {
         if (m.owner) {
             val lastLine = m.last.firstOrNull()?.let { "Last check ${friendlyTime(it)}. " } ?: ""
             card.addView(
-                ui.muted("${lastLine}It checks again at every start-up and every 6 hours."),
+                ui.muted("${lastLine}It checks again at every start-up and every 6 hours, and reads everything back to " +
+                    "make sure it stuck."),
                 ui.lp(top = 10)
             )
+            val (bootTime, bootHow) = m.bootResult.split("|", limit = 2).let { (it.getOrNull(0) ?: "") to (it.getOrNull(1) ?: "") }
+            val restartLine: Pair<String, Int>? = when {
+                m.bootMissed -> "The tablet restarted, but the start-up check hasn't run yet. Android may be stopping " +
+                    "the app at start-up: allow it in Settings > Battery > App launch (turn off \"Manage automatically\", " +
+                    "turn on all three switches). It's catching up now." to pal.warn
+                bootHow == "ok" -> "After the last restart: checked ${friendlyTime(bootTime)}, everything in place." to pal.muted
+                bootHow == "late" -> "After the last restart, the start-up check was blocked and only caught up " +
+                    "${friendlyTime(bootTime)}. Allow the app to start automatically: Settings > Battery > App launch." to pal.warn
+                bootHow.isNotEmpty() -> "After the last restart ($bootHow at first; see below)." to pal.muted
+                else -> null
+            }
+            restartLine?.let { (text, color) -> card.addView(ui.text(text, 13f, color), ui.lp(top = 6)) }
+            if (m.problems.isNotEmpty()) {
+                card.addView(ui.text("Not in place right now: " + m.problems.take(4).joinToString("; ") +
+                    (if (m.problems.size > 4) "; and ${m.problems.size - 4} more (see Log)." else "."), 13f, pal.warn),
+                    ui.lp(top = 6))
+            }
             if (failed > 0) {
                 card.addView(
                     ui.text("${plural(failed, "app", "apps")} couldn't be hidden or paused, so their permissions are locked off instead.", 13f, pal.warn),
@@ -328,7 +383,11 @@ class MainActivity : Activity() {
             }
             val actions = ui.horizontal()
             actions.addView(ui.button("Check now", Ui.Kind.PRIMARY) {
-                run({ enforcer.enforce("manual", notify = false)?.summary()?.let { "Checked: $it" } ?: "Not set up, so nothing was checked." })
+                run({
+                    val r = enforcer.enforce("manual", notify = false) ?: return@run "Not set up, so nothing was checked."
+                    val problems = enforcer.checkup("manual", notify = false)
+                    "Checked: ${r.summary()}." + if (problems.isEmpty()) " Everything is in place." else " Not in place: ${problems.joinToString("; ")}."
+                })
             })
             busyView = ui.muted("Working…").apply {
                 visibility = if (busy) View.VISIBLE else View.GONE
@@ -459,7 +518,7 @@ class MainActivity : Activity() {
         val texts = ui.vertical()
         val titleLine = ui.horizontal()
         titleLine.addView(ui.text(name, 15f, bold = true))
-        pill(lockMode, choice, st)?.let { (label, color) ->
+        pill(lockMode, choice, st, m.inUse[pkg])?.let { (label, color) ->
             titleLine.addView(ui.pill(label, color), LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { marginStart = ui.dp(8) })
@@ -467,6 +526,14 @@ class MainActivity : Activity() {
         texts.addView(titleLine)
         if (about.isNotBlank()) texts.addView(ui.muted(about), ui.lp(top = 2))
         texts.addView(ui.mono(pkg, 10.5f), ui.lp(top = 2))
+        if (!lockMode && choice != Catalogue.Choice.LEAVE && m.inUse[pkg] == "keyboard" && st?.hidden == false && st.installed) {
+            texts.addView(ui.muted("It's the keyboard you're using, so it stays until you switch to another one. " +
+                "See Keyboard under Privacy and security.", 12f).apply { setTextColor(pal.warn) }, ui.lp(top = 4))
+        }
+        if (!lockMode && choice != Catalogue.Choice.LEAVE && m.inUse[pkg] == "home screen" && st?.hidden == false && st.installed) {
+            texts.addView(ui.muted("It's your home screen, so it stays until you pick another one (see Lawnchair under Apps).", 12f)
+                .apply { setTextColor(pal.warn) }, ui.lp(top = 4))
+        }
         if (!lockMode && choice == Catalogue.Choice.LEAVE && st != null && (st.removedEarlier || st.hidden || st.suspended)) {
             texts.addView(ui.button("Bring it back", Ui.Kind.SECONDARY) {
                 guarded { run({ enforcer.show(pkg, name) ?: "$name is back." }) }
@@ -508,7 +575,7 @@ class MainActivity : Activity() {
     }
 
     /** The coloured label next to an app's name. */
-    private fun pill(lockMode: Boolean, choice: Catalogue.Choice, st: Enforcer.AppState?): Pair<String, Int>? {
+    private fun pill(lockMode: Boolean, choice: Catalogue.Choice, st: Enforcer.AppState?, inUseAs: String?): Pair<String, Int>? {
         val pal = ui.pal
         if (st == null || !st.present) return "Not on this tablet" to pal.muted
         val listed = choice != Catalogue.Choice.LEAVE
@@ -519,6 +586,7 @@ class MainActivity : Activity() {
         }
         val gone = st.hidden || !st.installed
         return when {
+            listed && !gone && inUseAs != null -> "Kept: it's your $inUseAs" to pal.warn
             choice == Catalogue.Choice.REMOVE && gone -> "Removed" to pal.good
             choice == Catalogue.Choice.HIDE && st.hidden -> "Hidden" to pal.good
             choice == Catalogue.Choice.HIDE && !st.installed -> "Removed earlier" to pal.good
@@ -528,6 +596,169 @@ class MainActivity : Activity() {
             st.hidden -> "Still hidden" to pal.warn
             !st.installed -> "Removed earlier" to pal.muted
             else -> null
+        }
+    }
+
+    // ------------------------------------------------------------- settings only the user can change
+
+    private fun globalSetting(key: String): String? = try {
+        android.provider.Settings.Global.getString(contentResolver, key)   // HONOR/Google keys may not be readable
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun todos(): List<Todo> {
+        fun marked(id: String) = store.setting("todo_$id", "") == "done"
+        val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+        val boot = store.setting(Store.S_BOOT_RESULT, "")
+        val adb = try { android.provider.Settings.Global.getInt(contentResolver, android.provider.Settings.Global.ADB_ENABLED, 0) } catch (e: Exception) { -1 }
+        return listOf(
+            Todo("screenlock", keyguard?.isDeviceSecure, marked("screenlock")),
+            Todo("startup", when {
+                boot.endsWith("|ok") -> true
+                boot.endsWith("|late") -> false
+                else -> null
+            }, marked("startup")),
+            Todo("playprotect", globalSetting("upload_apk_enable")?.let { it == "0" }, marked("playprotect")),
+            Todo("wifiplus", globalSetting("hn_wifipro_enable")?.let { it == "false" || it == "0" }, marked("wifiplus")),
+            Todo("usbdebug", if (adb < 0) null else adb == 0, marked("usbdebug")),
+        )
+    }
+
+    /** What each item says and which screen its button opens. */
+    private fun todoText(id: String): Triple<String, String, String> = when (id) {
+        "screenlock" -> Triple("Set a screen lock",
+            "A PIN, pattern or password. Without one, anyone who picks up the tablet gets straight in, and hiding " +
+                "notification text on the lock screen can't work.", "Set a screen lock")
+        "startup" -> Triple("Let the app start when the tablet does",
+            "Settings > Battery > App launch > Honor Pad 8 Debloater: turn off \"Manage automatically\" and turn on " +
+                "all three switches. If there's no App launch screen (it's part of System Manager), skip this: the " +
+                "app tells you if a restart is ever missed. This ticks itself once a restart is checked on time.",
+            "Open battery settings")
+        "playprotect" -> Triple("Stop Play Protect sending your apps to Google",
+            "In Play Protect's settings (the gear), turn off \"Improve harmful app detection\". It uploads copies of " +
+                "apps that didn't come from the Play Store, including F-Droid apps and this one. Leave \"Scan apps " +
+                "with Play Protect\" on.", "Open Play Protect")
+        "wifiplus" -> Triple("Turn off HONOR's Wi-Fi+",
+            "Settings > Wi-Fi > More settings (or the ⋮ menu) > Wi-Fi+. It tests your connection by contacting outside " +
+                "servers, including baidu.com, and switches networks by itself.", "Open Wi-Fi settings")
+        else -> Triple("Turn off USB debugging",
+            "Once you're done with the setup tool and the scan: Settings > System > Developer options > USB debugging, " +
+                "or switch on \"Block USB debugging\" under Privacy and security. Switch it back on before using the " +
+                "setup tool again.", "Open developer options")
+    }
+
+    private fun openTodo(id: String) {
+        val tries: List<Intent?> = when (id) {
+            "screenlock" -> listOf(Intent(android.app.admin.DevicePolicyManager.ACTION_SET_NEW_PASSWORD),
+                Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS))
+            "startup" -> listOf(Intent("android.intent.action.POWER_USAGE_SUMMARY"), Intent(android.provider.Settings.ACTION_SETTINGS))
+            "playprotect" -> listOf(Intent().setClassName("com.google.android.gms",
+                "com.google.android.gms.security.settings.VerifyAppsSettingsActivity"),
+                packageManager.getLaunchIntentForPackage("com.android.vending"))
+            "wifiplus" -> listOf(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+            else -> listOf(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
+                Intent(android.provider.Settings.ACTION_SETTINGS))
+        }
+        for (i in tries.filterNotNull()) {
+            try {
+                startActivity(i)
+                return
+            } catch (e: Exception) {
+                // try the next one
+            }
+        }
+        toast("Couldn't open that screen. Find it in Settings.")
+    }
+
+    private fun todoCard(m: Model): View {
+        val pal = ui.pal
+        val card = ui.card()
+        val left = m.todos.count { !it.done }
+        card.addView(ui.text("Finish setting up", 16f, bold = true))
+        card.addView(ui.muted("${plural(left, "setting", "settings")} only you can change: Android doesn't let apps change " +
+            "these. Each button opens the right screen. Ones the app can check tick themselves when you come back."),
+            ui.lp(top = 2, bottom = 4))
+        for (t in m.todos) {
+            val (title, why, button) = todoText(t.id)
+            card.addView(ui.divider(), ui.lp(top = 6))
+            val head = ui.horizontal()
+            head.addView(ui.text(title, 15f, bold = true), ui.lp(0, weight = 1f))
+            head.addView(ui.pill(if (t.done) "Done" else "To do", if (t.done) pal.good else pal.warn))
+            card.addView(head, ui.lp(top = 8))
+            if (t.done) continue
+            card.addView(ui.muted(why), ui.lp(top = 2))
+            val row = ui.horizontal()
+            row.addView(ui.button(button, Ui.Kind.SECONDARY) { openTodo(t.id) })
+            if (t.detected == null) {
+                row.addView(View(this), LinearLayout.LayoutParams(ui.dp(8), 1))
+                row.addView(ui.button("Mark as done", Ui.Kind.TEXT) {
+                    run({ store.setSetting("todo_${t.id}", "done"); "Marked as done." })
+                })
+            }
+            card.addView(row, ui.lp(top = 6))
+        }
+        return card
+    }
+
+    // ------------------------------------------------------------- replace home screen and keyboard
+
+    /** Shown once, after setup: offer to swap HONOR's home screen and SwiftKey for Lawnchair and HeliBoard. */
+    private fun replaceCard(): View {
+        val card = ui.card(ui.pal.accentSoft)
+        card.addView(ui.text("Replace HONOR's home screen and keyboard?", 16f, bold = true))
+        card.addView(ui.muted("Installs Lawnchair (a clean home screen) and HeliBoard (a keyboard with no internet access) " +
+            "from their official GitHub pages, checks each is signed with its project's key, and makes them the home " +
+            "screen and keyboard. Then SwiftKey is removed and HONOR Home is hidden. You can undo any of it later."),
+            ui.lp(top = 4))
+        card.addView(ui.muted("On MagicUI, HONOR Home also runs the Recents screen and swipe gestures. If those stop " +
+            "working afterwards, open HONOR apps here and choose Leave for HONOR Home.", 12f).apply { setTextColor(ui.pal.warn) },
+            ui.lp(top = 6))
+        val row = ui.horizontal()
+        row.addView(ui.button("Yes, replace them", Ui.Kind.PRIMARY) { replaceNow() })
+        row.addView(View(this), LinearLayout.LayoutParams(ui.dp(8), 1))
+        row.addView(ui.button("No thanks", Ui.Kind.TEXT) {
+            run({ store.setSetting(Store.S_REPLACE_OFFER, "no"); "OK. You can do it later from Apps." })
+        })
+        card.addView(row, ui.lp(top = 10))
+        return card
+    }
+
+    private fun replaceNow() = guarded {
+        report("Replacing the home screen and keyboard",
+            "Downloading and installing. This can take a minute or two; keep the tablet on Wi-Fi.") {
+            enforcer.replaceHomeAndKeyboard()
+        }
+    }
+
+    /**
+     * Like run(), for longer jobs: a waiting dialog, then the result in a dialog (with a shortcut to Keyboard
+     * settings when the result mentions it).
+     */
+    private fun report(title: String, waiting: String, job: () -> String) {
+        if (busy) return
+        busy = true
+        busyView?.visibility = View.VISIBLE
+        val wait = AlertDialog.Builder(this).setTitle(title).setMessage(waiting).setCancelable(false).show()
+        Thread {
+            val msg = try { job() } catch (e: Exception) { "Something went wrong: ${e.message}" }
+            runOnUiThread {
+                busy = false
+                if (isDestroyed) return@runOnUiThread
+                wait.dismiss()
+                val b = AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton("OK", null)
+                if (msg.contains("Keyboard settings")) b.setNeutralButton("Keyboard settings") { _, _ -> openKeyboardSettings() }
+                b.show()
+                reload()
+            }
+        }.start()
+    }
+
+    private fun openKeyboardSettings() {
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_INPUT_METHOD_SETTINGS))
+        } catch (e: Exception) {
+            toast("Couldn't open keyboard settings.")
         }
     }
 
@@ -578,8 +809,34 @@ class MainActivity : Activity() {
         body.addView(onOffRow("Update it automatically", "Checks once a day and installs new releases without asking.",
             Store.S_LAWNCHAIR_AUTO, m.setting(Store.S_LAWNCHAIR_AUTO, "on") == "on"), ui.lp(top = 6))
 
-        val installed = listOfNotNull(m.fdroid?.let { "F-Droid" }, m.lawnchair?.let { "Lawnchair" })
-        return section("apps", "Apps", if (installed.isEmpty()) "Install F-Droid and Lawnchair" else installed.joinToString(" and ") + " installed",
+        // HeliBoard
+        body.addView(ui.divider(), ui.lp(top = 12))
+        body.addView(appHeader("HeliBoard", m.heliboard, "An open-source keyboard with no internet access. Stable releases only."), ui.lp(top = 10))
+        val heliRow = ui.horizontal()
+        heliRow.addView(ui.button(if (m.heliboard == null) "Install HeliBoard" else "Check for an update", Ui.Kind.PRIMARY) {
+            run({ ownerOnly { online("github.com") { enforcer.installer().let { it.install(Installer.HELIBOARD, it.latestHeliboard()) } } } })
+        })
+        if (m.heliboard != null && m.keyboard != Installer.HELIBOARD.pkg) {
+            heliRow.addView(View(this), LinearLayout.LayoutParams(ui.dp(8), 1))
+            heliRow.addView(ui.button("Use it as the keyboard", Ui.Kind.SECONDARY) {
+                report("Switching keyboard", "Switching to HeliBoard...") { ownerOnly { enforcer.useKeyboard(Installer.HELIBOARD.pkg, "HeliBoard") } }
+            })
+        }
+        body.addView(heliRow, ui.lp(top = 8))
+        body.addView(onOffRow("Update it automatically", "Checks once a day and installs new stable releases without asking.",
+            Store.S_HELI_AUTO, m.setting(Store.S_HELI_AUTO, "on") == "on"), ui.lp(top = 6))
+
+        // both at once
+        val done = m.setting(Store.S_HOME, "") == Installer.LAWNCHAIR.pkg && m.keyboard == Installer.HELIBOARD.pkg
+        if (!done) {
+            body.addView(ui.divider(), ui.lp(top = 12))
+            body.addView(ui.muted("Or do it all in one go: install both, make them the home screen and keyboard, remove " +
+                "SwiftKey and hide HONOR Home.", 12f), ui.lp(top = 10))
+            body.addView(ui.button("Replace home screen and keyboard", Ui.Kind.SECONDARY) { replaceNow() }, ui.lp(WRAP, top = 6))
+        }
+
+        val installed = listOfNotNull(m.fdroid?.let { "F-Droid" }, m.lawnchair?.let { "Lawnchair" }, m.heliboard?.let { "HeliBoard" })
+        return section("apps", "Apps", if (installed.isEmpty()) "Install F-Droid, Lawnchair and HeliBoard" else installed.joinToString(", ") + " installed",
             null, emptyList(), extra = body)
     }
 
@@ -614,6 +871,8 @@ class MainActivity : Activity() {
                 for (p in m.inputApps) body.addView(approveRow(m, p), ui.lp(top = 4))
             }
         }
+
+        body.addView(keyboardSection(m), ui.lp(top = 0))
 
         // Private DNS
         body.addView(ui.divider(), ui.lp(top = 8))
@@ -694,6 +953,43 @@ class MainActivity : Activity() {
         }
         row.addView(picker, LinearLayout.LayoutParams(WRAP, WRAP).apply { marginStart = ui.dp(12) })
         return row
+    }
+
+    /** Which keyboard is in use, and how to switch (SwiftKey can only be removed once it isn't). */
+    private fun keyboardSection(m: Model): View {
+        val box = ui.vertical()
+        box.addView(ui.divider(), ui.lp(top = 8))
+        box.addView(ui.text("Keyboard", 15f, bold = true), ui.lp(top = 8))
+        val current = m.keyboard?.let { m.states[it]?.label ?: it } ?: "unknown"
+        box.addView(ui.muted("In use: $current. The keyboard in use is never hidden or removed, so you're never left " +
+            "without one. To replace it: install another keyboard (HeliBoard from F-Droid, or Gboard), allow it above, " +
+            "turn it on in Keyboard settings, then tap Change keyboard and pick it. The old one is then dealt with " +
+            "straight away. HeliBoard (under Apps) does all of this with one tap."), ui.lp(top = 2))
+        val row = ui.horizontal()
+        row.addView(ui.button("Keyboard settings", Ui.Kind.SECONDARY) { openKeyboardSettings() })
+        row.addView(View(this), LinearLayout.LayoutParams(ui.dp(8), 1))
+        row.addView(ui.button("Change keyboard", Ui.Kind.PRIMARY) {
+            keyboardBefore = enforcer.defaultIme()
+            val imm = getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+            if (imm == null) toast("Couldn't open the keyboard picker.") else imm.showInputMethodPicker()
+        })
+        box.addView(row, ui.lp(top = 8))
+        return box
+    }
+
+    /** The keyboard picker is a dialog over this screen; when it closes, check whether the keyboard changed. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        val before = keyboardBefore ?: return
+        if (!hasFocus) return
+        keyboardBefore = null
+        val now = enforcer.defaultIme()
+        if (now != null && now != before) {
+            run({
+                enforcer.enforce("keyboard changed", notify = false)
+                "Switched keyboard. Anything set to Hide or Remove that was in use is dealt with now."
+            })
+        }
     }
 
     private fun approveRow(m: Model, pkg: String): View {
@@ -788,6 +1084,15 @@ class MainActivity : Activity() {
         body.addView(ui.button("Add them to the list", Ui.Kind.SECONDARY) {
             guarded { run({ "Added ${plural(enforcer.snapshot(), "app", "apps")} to the list." }) }
         }, ui.lp(WRAP))
+
+        if (m.todos.any { it.detected == null && it.marked }) {
+            body.addView(ui.divider(), ui.lp(top = 12))
+            body.addView(ui.text("Setup checklist", 15f, bold = true), ui.lp(top = 12))
+            body.addView(ui.muted("Bring back the items you marked as done in Finish setting up.", 12f), ui.lp(top = 2, bottom = 6))
+            body.addView(ui.button("Show the checklist again", Ui.Kind.SECONDARY) {
+                run({ for (t in m.todos) store.setSetting("todo_${t.id}", ""); "The checklist is back at the top." })
+            }, ui.lp(WRAP))
+        }
 
         body.addView(ui.divider(), ui.lp(top = 12))
         body.addView(ui.text("Log", 15f, bold = true), ui.lp(top = 12))

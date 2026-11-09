@@ -181,6 +181,9 @@ class Store(private val ctx: Context) {
         const val S_LAWNCHAIR_TAG = "lawnchair_last_release"
         const val S_HOME = "home_locked_to"
         const val S_SELF_AUTO = "self_auto_update"
+        const val S_HELI_AUTO = "heliboard_auto_update"
+        const val S_HELI_TAG = "heliboard_last_release"
+        const val S_REPLACE_OFFER = "replace_offer"     // "" = not asked yet, "yes", "no"
         const val S_SELF_TAG = "self_last_release"
         const val BASELINE = "baseline.txt"   // every package seen so far
         const val MANAGED = "managed.txt"     // packages this app has hidden or suspended
@@ -190,6 +193,10 @@ class Store(private val ctx: Context) {
         const val FAILED = "failed.txt"       // packages that couldn't be blocked (already reported once)
         const val LOG = "log.txt"
         const val LAST = "last_run.txt"       // time and summary of the last check
+        const val PROBLEMS = "problems.txt"   // what the last check found not in place
+        const val PROBLEMS_TOLD = "problems_told.txt" // problems already in a notification
+        const val S_BOOT_CHECKED = "boot_checked"     // Android's boot count when the start-up check last ran
+        const val S_BOOT_RESULT = "boot_result"       // "<time>|ok", "<time>|late" or "<time>|<n> problems"
 
         private val LOCK = Any()
 

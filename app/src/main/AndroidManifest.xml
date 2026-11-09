@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Only to explain a failed download (offline, or this app's internet blocked). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Stops hidden apps that are still running in the background. -->
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
     <!-- Installing F-Droid and Lawnchair, and stripping updates from apps set to Remove. As device owner
          these happen without a prompt; nothing else can use them through this app. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />

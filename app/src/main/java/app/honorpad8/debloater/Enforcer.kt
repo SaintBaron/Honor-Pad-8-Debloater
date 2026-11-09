@@ -153,8 +153,11 @@ class Enforcer(context: Context) {
 
     private fun suspended(p: String) = try { dpm.isPackageSuspended(admin, p) } catch (e: Exception) { false }
 
-    /** Never hidden, whatever the list says. */
-    private fun protectedSet(): Set<String> {
+    /** Never hidden, whatever the list says: the core set, plus the home screen and keyboard in use. */
+    private fun protectedSet(): Set<String> = coreSet() + inUse().keys
+
+    /** The tablet's core packages, never hidden whichever home screen and keyboard are in use. */
+    private fun coreSet(): Set<String> {
         val s = mutableSetOf(
             ctx.packageName, "android", "com.android.systemui", "com.android.settings", "com.android.phone",
             "com.android.shell", "com.android.se", "com.android.server.telecom", "com.android.networkstack.tethering.overlay",
@@ -162,13 +165,11 @@ class Enforcer(context: Context) {
             "com.google.android.permissioncontroller", "com.google.android.packageinstaller",
             "com.google.android.ext.services", "com.google.android.networkstack", "com.google.android.documentsui",
             "com.google.android.providers.media.module",
-            "com.hihonor.android.internal.app", "com.hihonor.android.launcher",
+            "com.hihonor.android.internal.app",
             "com.hihonor.systemserver", "com.hihonor.securityserver", "com.hihonor.securitypluginbase",
             "com.hihonor.permissioncontroller.overlay", "com.hihonor.keychain", "com.hihonor.ouc",
             "com.hihonor.iaware", "com.hihonor.powergenie", "com.hihonor.msdp", "com.hihonor.bluetooth",
         )
-        defaultHome()?.let { s += it }
-        defaultIme()?.let { s += it }
         return s
     }
 
@@ -179,6 +180,191 @@ class Enforcer(context: Context) {
         p in prot || p.startsWith("com.android.providers.") || p.startsWith("com.qualcomm.") ||
             p.startsWith("vendor.") || p.startsWith("org.codeaurora.")
 
+    // ------------------------------------------------------------- checking it all stuck
+
+    /** Read back everything that should be in place. Each entry is something that isn't. */
+    fun verify(): List<String> = synchronized(LOCK) {
+        if (!isOwner()) return emptyList()
+        val problems = mutableListOf<String>()
+        val listed = (store.readList(Store.BLOCK) + store.readList(Store.REMOVE)).toSet()
+        val homes = homeApps()
+        val prot = protectedSet() + (if (homes.none { it !in listed }) homes + HONOR_HOME else emptySet())
+        val failed = store.readSet(Store.FAILED)   // already reported, and locked down instead
+        val apps = allApps()
+        for (p in listed) {
+            if (isProtected(p, prot) || p in failed) continue
+            val info = apps[p] ?: continue
+            if (hidden(p) || suspended(p) || !installedForUser(info)) continue
+            problems += "$p is still visible"
+        }
+        problems += hardening().verify()
+        val home = store.setting(Store.S_HOME, "")
+        if (home.isNotEmpty() && exists(home) && defaultHome() != home) problems += "the home screen isn't $home"
+        return problems
+    }
+
+    /**
+     * Verify, remember the result, and (when [notify]) tell the user about problems still there on two checks in a
+     * row (so a moment without a network at start-up doesn't cause an alert), once each.
+     */
+    fun checkup(trigger: String, notify: Boolean = true): List<String> {
+        val problems = try { verify() } catch (e: Exception) { listOf("the check itself failed: ${e.message}") }
+        val before = store.readSet(Store.PROBLEMS)
+        store.writeSet(Store.PROBLEMS, problems.toSet())
+        if (problems.isNotEmpty()) store.log("[$trigger] not in place: ${problems.joinToString("; ")}")
+        else if (before.isNotEmpty()) store.log("[$trigger] everything is back in place")
+        val told = store.readSet(Store.PROBLEMS_TOLD)
+        val tell = problems.filter { it in before && it !in told }
+        store.writeSet(Store.PROBLEMS_TOLD, told.intersect(problems.toSet()) + tell)
+        if (notify && tell.isNotEmpty()) {
+            Notifier.show(ctx, "Some protections aren't in place", tell.joinToString("\n") + "\nOpen the app for details.")
+        }
+        return problems
+    }
+
+    /**
+     * When this start-up happened, in minutes of wall-clock time (the clock now, minus the time since start-up).
+     * Android's own boot counter isn't kept up to date on this firmware, so this is how a restart is recognised.
+     * A clock correction moves it by seconds; a restart moves it by at least as long as the tablet was on.
+     */
+    fun bootMinute(): Long = bootClock() / 60_000L
+
+    /** Record that the start-up check ran for this start-up, and how it went. */
+    fun recordBootCheck(problems: List<String>, late: Boolean = false) {
+        store.setSetting(Store.S_BOOT_CHECKED, bootMinute().toString())
+        val result = when {
+            late -> "late"
+            problems.isEmpty() -> "ok"
+            else -> "${problems.size} problems"
+        }
+        store.setSetting(Store.S_BOOT_RESULT, "${Store.now()}|$result")
+    }
+
+    /**
+     * True when the tablet has restarted since the start-up check last ran: HONOR's start-up manager (or battery
+     * saving) stopped the app being told about the restart. The first time ever, there's nothing to compare, so false.
+     */
+    fun bootCheckMissed(): Boolean {
+        if (!isOwner()) return false
+        val now = bootMinute()
+        val seen = store.setting(Store.S_BOOT_CHECKED, "").toLongOrNull()
+        if (seen == null) {
+            store.setSetting(Store.S_BOOT_CHECKED, now.toString())
+            return false
+        }
+        return kotlin.math.abs(now - seen) > BOOT_TOLERANCE_MIN
+    }
+
+    /** Run by every check that isn't the start-up one: if the start-up check was missed, say so (once per start-up). */
+    fun catchUpIfBootMissed(trigger: String, problems: List<String>) {
+        if (!bootCheckMissed()) return
+        store.log("[$trigger] the tablet restarted, but the start-up check didn't run; caught up now")
+        recordBootCheck(problems, late = true)
+        Notifier.show(ctx, "Start-up check was blocked",
+            "The tablet restarted, but Android didn't let the debloater run at start-up, so it only caught up now. " +
+                "Allow it to start automatically: Settings > Battery > App launch > Honor Pad 8 Debloater, then " +
+                "turn off \"Manage automatically\" and turn on all three switches.")
+    }
+
+    /** Visible home screen apps (Settings' boot-time placeholder doesn't count). */
+    @Suppress("DEPRECATION")
+    private fun homeApps(): Set<String> = try {
+        pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), 0)
+            .mapNotNull { it.activityInfo?.packageName }
+            .filter { it != "com.android.settings" && it != ctx.packageName }.toSet()
+    } catch (e: Exception) {
+        emptySet()
+    }
+
+    /** The keyboard service in [pkg], as Android names it in settings ("pkg/.Class"), or null if it isn't a keyboard. */
+    @Suppress("DEPRECATION")
+    fun keyboardId(pkg: String): String? = try {
+        pm.queryIntentServices(Intent("android.view.InputMethod").setPackage(pkg), 0)
+            .firstNotNullOfOrNull { it.serviceInfo }?.let { si ->
+                val cls = si.name ?: return@let null
+                if (cls.startsWith("$pkg.")) "$pkg/${cls.substring(pkg.length)}" else "$pkg/$cls"
+            }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Is [pkg]'s keyboard switched on in Android's keyboard settings? */
+    fun keyboardEnabled(pkg: String): Boolean = pkg in EnabledServices.keyboards(ctx)
+
+    /**
+     * Make [pkg] the keyboard: allow it (if keyboards need approving) and select it. Android may still want it
+     * switched on in Keyboard settings; the message says so.
+     */
+    fun useKeyboard(pkg: String, name: String): String = synchronized(LOCK) {
+        if (!isOwner()) return "The debloater isn't set up."
+        val id = keyboardId(pkg) ?: return "$name isn't installed as a keyboard."
+        val h = hardening()
+        h.setApproved(pkg, true)
+        h.apply()
+        try {
+            dpm.setSecureSetting(admin, Settings.Secure.DEFAULT_INPUT_METHOD, id)
+        } catch (e: Exception) {
+            store.log("couldn't select keyboard $id: ${e.message}")
+        }
+        if (defaultIme() == pkg) {
+            store.log("keyboard switched to $id")
+            enforce("keyboard changed", notify = false)
+            if (keyboardEnabled(pkg)) "$name is now the keyboard."
+            else "$name is now the keyboard. Also switch it on in Keyboard settings, so it stays in the keyboard list."
+        } else {
+            "$name is allowed, but Android didn't switch to it. Open Keyboard settings, switch $name on, then tap Change keyboard."
+        }
+    }
+
+    /**
+     * Install Lawnchair and HeliBoard (if needed), make them the home screen and keyboard, and set HONOR's home
+     * screen to Hide and SwiftKey to Remove. Each step is reported; a failed step doesn't stop the others.
+     */
+    fun replaceHomeAndKeyboard(): String {
+        if (!isOwner()) return "Set the debloater up first: installing apps needs its device-owner role."
+        store.setSetting(Store.S_REPLACE_OFFER, "yes")
+        val inst = installer()
+        val out = mutableListOf<String>()
+        fun installed(app: Installer.App, latest: () -> Installer.Candidate): Boolean = try {
+            when {
+                inst.installedVersion(app.pkg) != null -> true
+                inst.installAndWait(app, latest()) -> { out += "Installed ${app.name}."; true }
+                else -> { out += "${app.name} is still installing. Try again in a minute."; false }
+            }
+        } catch (e: java.io.IOException) {
+            out += "${app.name}: ${NetDiagnosis.explain(ctx, e, "GitHub")}"; false
+        } catch (e: Exception) {
+            out += "${app.name} wasn't installed: ${e.message}"; false
+        }
+
+        if (installed(Installer.LAWNCHAIR) { inst.latestLawnchair() }) {
+            val r = forceHome(Installer.LAWNCHAIR.pkg)
+            if (store.setting(Store.S_HOME, "") == Installer.LAWNCHAIR.pkg) {
+                out += "Lawnchair is now the home screen."
+                synchronized(LOCK) { store.setChoice(HONOR_HOME, Catalogue.Choice.HIDE, "HONOR Home") }
+            } else out += r
+        }
+        if (installed(Installer.HELIBOARD) { inst.latestHeliboard() }) {
+            out += useKeyboard(Installer.HELIBOARD.pkg, "HeliBoard")
+            synchronized(LOCK) { for (p in SWIFTKEY) store.setChoice(p, Catalogue.Choice.REMOVE, null) }
+        }
+        enforce("replaced home screen and keyboard", notify = false)
+        val st = states(listOf(HONOR_HOME) + SWIFTKEY)
+        if (st[HONOR_HOME]?.hidden == true) out += "HONOR Home is hidden."
+        val sk = st[SWIFTKEY[0]]
+        if (sk != null && sk.present && (sk.hidden || !sk.installed)) out += "SwiftKey is removed."
+        else if (sk?.present == true && defaultIme() == SWIFTKEY[0]) out += "SwiftKey stays until you switch keyboard."
+        return out.joinToString("\n")
+    }
+
+    /** Apps kept whatever their setting says, because the tablet is using them right now: package -> what for. */
+    fun inUse(): Map<String, String> {
+        val m = mutableMapOf<String, String>()
+        defaultHome()?.let { m[it] = "home screen" }
+        defaultIme()?.let { m[it] = "keyboard" }
+        return m
+    }
+
     @Suppress("DEPRECATION")
     private fun defaultHome(): String? = try {
         pm.resolveActivity(
@@ -188,7 +374,7 @@ class Enforcer(context: Context) {
         null
     }
 
-    private fun defaultIme(): String? =
+    fun defaultIme(): String? =
         Settings.Secure.getString(ctx.contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)?.substringBefore('/')
 
     // ------------------------------------------------------------- permissions
@@ -241,7 +427,11 @@ class Enforcer(context: Context) {
         } catch (e: Exception) {
             store.log("couldn't merge new defaults (carrying on): ${e.message}")
         }
-        val prot = protectedSet()
+        // Never leave the tablet without a home screen: unless some home screen app is off the lists,
+        // every home screen app (and HONOR's own) is kept, and HONOR's comes back if it was hidden.
+        val listed = (store.readList(Store.BLOCK) + store.readList(Store.REMOVE)).toSet()
+        val homes = homeApps()
+        val prot = protectedSet() + (if (homes.none { it !in listed }) homes + HONOR_HOME else emptySet())
         val apps = allApps()
         // HONOR preinstalls some apps (Facebook, Netflix, Booking.com, WPS Office...) as ordinary apps
         // rather than system apps, so the lists apply to every app that isn't a core part of the tablet.
@@ -267,7 +457,7 @@ class Enforcer(context: Context) {
                 managed -= p
                 wiped -= p
                 restored += p
-                store.log("restored $p (no longer on the list)")
+                store.log("restored $p (${if (p in listed) "needed: nothing else can be the home screen" else "no longer on the list"})")
             } catch (e: Exception) {
                 store.log("couldn't restore $p: ${e.message}")
             }
@@ -312,8 +502,10 @@ class Enforcer(context: Context) {
         }
         store.writeSet(Store.WIPED, wiped.filter { it in toRemove }.toSet())
 
-        // 3. Lock runtime permissions off for lockdown packages and anything that couldn't be blocked.
-        val lockTargets = (store.readList(Store.LOCKDOWN) + failed)
+        // 3. Lock runtime permissions off for lockdown packages, anything that couldn't be blocked, and anything set
+        //    to Remove (some of HONOR's keep running while hidden because the system starts them; without their
+        //    permissions they can't do much). Choosing Leave releases the lock along with everything else.
+        val lockTargets = (store.readList(Store.LOCKDOWN) + failed + toRemove)
             .filterNot { isProtected(it, prot) }.filter { it in apps }.toSet()
         val locked = store.readSet(Store.LOCKED)
         var lockedPerms = 0
@@ -330,6 +522,12 @@ class Enforcer(context: Context) {
             store.log("released permission lock on $p")
         }
         store.writeSet(Store.LOCKED, locked)
+
+        // 3a. Stop hidden apps that are still running in the background (only works for ones nothing is holding open).
+        try {
+            val am = ctx.getSystemService(android.app.ActivityManager::class.java)
+            for (p in managed) am?.killBackgroundProcesses(p)
+        } catch (e: Exception) { }
 
         protectSelf()
 
@@ -455,7 +653,7 @@ class Enforcer(context: Context) {
      */
     fun setChoice(p: String, choice: Catalogue.Choice, label: String? = null): String = synchronized(LOCK) {
         val leave = choice == Catalogue.Choice.LEAVE
-        if (!leave && isProtected(p)) return "That's a core part of the tablet, so it's never hidden."
+        if (!leave && isProtected(p, coreSet())) return "That's a core part of the tablet, so it's never hidden."
         val wasWiped = p in store.readSet(Store.WIPED)
         store.setChoice(p, choice, label)
         if (!leave) store.forgetNew(p)
@@ -468,7 +666,9 @@ class Enforcer(context: Context) {
         }
         val st = states(listOf(p))[p]!!
         val gone = st.hidden || st.suspended || !st.installed
+        val use = if (leave) null else inUse()[p]
         when {
+            use != null && !gone -> "Saved. $name is your $use, so it stays until you switch to another one, then it's ${if (choice == Catalogue.Choice.REMOVE) "removed" else "hidden"}."
             !st.present -> if (leave) "$name isn't on this tablet." else "$name isn't on this tablet. It'll be ${if (choice == Catalogue.Choice.REMOVE) "removed" else "hidden"} if it ever turns up."
             leave -> if (wasWiped) "$name is back. Its data was wiped, so it starts fresh." else "$name is back."
             choice == Catalogue.Choice.REMOVE && gone && !st.suspended -> "$name is removed: hidden, with its data wiped."
@@ -628,6 +828,13 @@ class Enforcer(context: Context) {
     }
 
     companion object {
+        const val HONOR_HOME = "com.hihonor.android.launcher"
+        /** How far the start-up time may drift (clock corrections) and still count as the same start-up. */
+        const val BOOT_TOLERANCE_MIN = 10L
+        /** Start-up time in wall-clock milliseconds; replaceable in tests. */
+        @Volatile var bootClock: () -> Long = { System.currentTimeMillis() - android.os.SystemClock.elapsedRealtime() }
+        val SWIFTKEY = listOf("com.touchtype.swiftkey", "com.swiftkey.swiftkeyconfigurator")
+
         private val LOCK = Any()
         private val VENDOR_INSTALLERS = listOf("com.hihonor.", "com.huawei.", "com.facebook.")
     }

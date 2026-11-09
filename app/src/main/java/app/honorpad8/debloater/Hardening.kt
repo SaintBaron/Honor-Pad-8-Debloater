@@ -66,6 +66,41 @@ class Hardening(
         step("always-on VPN") { applyVpn() }
     }
 
+    /** Read back each setting that's on. Each entry is one that isn't in place. */
+    fun verify(): List<String> {
+        val problems = mutableListOf<String>()
+        fun check(what: String, ok: () -> Boolean) {
+            try {
+                if (!ok()) problems += what
+            } catch (e: Exception) {
+                problems += "$what (couldn't read it back)"
+            }
+        }
+        val r = dpm.getUserRestrictions(admin)
+        for ((key, _, restrictions) in restrictionSettings) {
+            if (on(key)) for (x in restrictions) check("restriction $x") { r.getBoolean(x, false) }
+        }
+        if (on(Store.S_BACKUP_OFF)) check("cloud backup off") { !dpm.isBackupServiceEnabled(admin) }
+        if (on(Store.S_REDACT_LOCKSCREEN)) check("lock-screen notification text hidden") {
+            dpm.getKeyguardDisabledFeatures(admin) and DevicePolicyManager.KEYGUARD_DISABLE_UNREDACTED_NOTIFICATIONS != 0
+        }
+        if (on(Store.S_APPROVE_INPUT)) {
+            check("keyboards limited to approved ones") { dpm.getPermittedInputMethods(admin) != null }
+            check("accessibility apps limited to approved ones") { dpm.getPermittedAccessibilityServices(admin) != null }
+        }
+        dnsHost(store.setting(Store.S_DNS, "off"))?.let { host ->
+            check("Private DNS set to $host") {
+                dpm.getGlobalPrivateDnsMode(admin) == DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME &&
+                    dpm.getGlobalPrivateDnsHost(admin) == host
+            }
+        }
+        val vpn = store.setting(Store.S_VPN, "")
+        if (vpn.isNotEmpty()) check("always-on VPN locked to $vpn") {
+            dpm.getAlwaysOnVpnPackage(admin) == vpn && dpm.isAlwaysOnVpnLockdownEnabled(admin)
+        }
+        return problems
+    }
+
     private fun step(name: String, block: () -> Unit) {
         try {
             block()

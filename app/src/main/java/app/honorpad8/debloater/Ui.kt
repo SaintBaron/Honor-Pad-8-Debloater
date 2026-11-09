@@ -30,6 +30,7 @@ class Palette(val dark: Boolean) {
     val muted = if (dark) 0xFF9AA0A6.toInt() else 0xFF5F6670.toInt()
     val divider = if (dark) 0x1FFFFFFF else 0x14000000
     val accent = if (dark) 0xFF7FB2FF.toInt() else 0xFF2563EB.toInt()
+    val accentSoft = if (dark) 0xFF1B2A44.toInt() else 0xFFE8F0FE.toInt()   // a highlighted card
     val onAccent = if (dark) 0xFF0B1B33.toInt() else 0xFFFFFFFF.toInt()
     val good = if (dark) 0xFF5FD39A.toInt() else 0xFF14804A.toInt()
     val warn = if (dark) 0xFFF2B35B.toInt() else 0xFFB45309.toInt()

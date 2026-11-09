@@ -12,7 +12,7 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * Installs and updates F-Droid, Lawnchair and this app itself. Each download is only installed if:
+ * Installs and updates F-Droid, Lawnchair, HeliBoard and this app itself. Each download is only installed if:
  *  - it came over HTTPS from the app's short list of hosts (see Net),
  *  - it's the expected app (package name),
  *  - it's signed with that project's known signing key (pinned below), and
@@ -23,6 +23,7 @@ class Installer(
     context: Context,
     private val net: Net = Net(),
     private val lawnchair: App = LAWNCHAIR,   // replaceable in tests
+    private val heliboard: App = HELIBOARD,
     private val repo: String = BuildConfig.UPDATE_REPO,
     private val selfSigner: String = BuildConfig.UPDATE_SIGNER,
 ) {
@@ -64,6 +65,13 @@ class Installer(
         val js = MiniJson.parse(net.getText("https://api.github.com/repos/LawnchairLauncher/lawnchair/releases?per_page=20")) as? List<*>
             ?: throw Net.NetError("unexpected reply from GitHub")
         return lawnchairCandidate(js)
+    }
+
+    /** The newest stable HeliBoard release on its GitHub page (pre-releases are skipped). */
+    fun latestHeliboard(): Candidate {
+        val js = MiniJson.parse(net.getText("https://api.github.com/repos/Helium314/HeliBoard/releases/latest")) as? Map<*, *>
+            ?: throw Net.NetError("unexpected reply from GitHub")
+        return heliboardCandidate(js)
     }
 
     /** This app itself, as published on its own GitHub Releases page. */
@@ -143,7 +151,29 @@ class Installer(
         } catch (e: Exception) {
             store.log("Lawnchair auto-update didn't finish: ${e.message}")
         }
+        try {
+            autoUpdateHeliboard()
+        } catch (e: Exception) {
+            store.log("HeliBoard auto-update didn't finish: ${e.message}")
+        }
         autoUpdateSelf()
+    }
+
+    /**
+     * Install [app] and wait until Android has finished (installing is asynchronous). Returns true once it's
+     * installed at that version or newer, false if it didn't finish within [timeoutMs].
+     */
+    fun installAndWait(app: App, c: Candidate, timeoutMs: Long = 120_000): Boolean {
+        val before = installedVersion(app.pkg)
+        val msg = install(app, c)
+        if (msg.endsWith("already up to date.")) return true
+        val until = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < until) {
+            val now = installedVersion(app.pkg)
+            if (now != null && (before == null || now > before)) return true
+            Thread.sleep(500)
+        }
+        return false
     }
 
     /** Update this app if there's a newer release and its automatic updates are on. */
@@ -167,22 +197,27 @@ class Installer(
     }
 
     /** Run by the daily job: update Lawnchair if it's installed, auto-update is on, and there's a newer release. */
-    fun autoUpdate(): String? {
-        if (store.setting(Store.S_LAWNCHAIR_AUTO, "on") != "on") return null
-        if (installedVersion(lawnchair.pkg) == null) return null
-        val c = latestLawnchair()
-        if (store.setting(Store.S_LAWNCHAIR_TAG, "") == c.label) return null   // already handled this release
+    fun autoUpdate(): String? = autoUpdateApp(lawnchair, Store.S_LAWNCHAIR_AUTO, Store.S_LAWNCHAIR_TAG) { latestLawnchair() }
+
+    /** The same for HeliBoard. */
+    fun autoUpdateHeliboard(): String? = autoUpdateApp(heliboard, Store.S_HELI_AUTO, Store.S_HELI_TAG) { latestHeliboard() }
+
+    private fun autoUpdateApp(app: App, autoKey: String, tagKey: String, latest: () -> Candidate): String? {
+        if (store.setting(autoKey, "on") != "on") return null
+        if (installedVersion(app.pkg) == null) return null
+        val c = latest()
+        if (store.setting(tagKey, "") == c.label) return null   // already handled this release
         // Remember the release once it's dealt with, so it isn't downloaded again every day. A network
         // failure isn't remembered (it's retried tomorrow); a file that fails its checks is.
         val msg = try {
-            install(lawnchair, c)
+            install(app, c)
         } catch (e: SecurityException) {
-            store.setSetting(Store.S_LAWNCHAIR_TAG, c.label)
-            store.log("Lawnchair auto-update (${c.label}) refused: ${e.message}")
+            store.setSetting(tagKey, c.label)
+            store.log("${app.name} auto-update (${c.label}) refused: ${e.message}")
             throw e
         }
-        store.setSetting(Store.S_LAWNCHAIR_TAG, c.label)
-        store.log("Lawnchair auto-update (${c.label}): $msg")
+        store.setSetting(tagKey, c.label)
+        store.log("${app.name} auto-update (${c.label}): $msg")
         return msg
     }
 
@@ -191,7 +226,10 @@ class Installer(
     /** Make [pkg] the home screen for good (HONOR can't switch it back), or undo that with null. */
     fun forceHome(dpm: DevicePolicyManager, admin: ComponentName, pkg: String?): String {
         val old = store.setting(Store.S_HOME, "")
-        if (old.isNotEmpty()) dpm.clearPackagePersistentPreferredActivities(admin, old)
+        if (old.isNotEmpty()) {
+            dpm.clearPackagePersistentPreferredActivities(admin, old)
+            try { dpm.setUninstallBlocked(admin, old, false) } catch (e: Exception) { }
+        }
         if (pkg == null) {
             store.setSetting(Store.S_HOME, "")
             return "The home screen is no longer locked to one app."
@@ -205,6 +243,9 @@ class Installer(
             addCategory(Intent.CATEGORY_DEFAULT)
         }
         dpm.addPersistentPreferredActivity(admin, filter, ComponentName(activity.packageName, activity.name))
+        // While it's the locked home screen it can't be uninstalled by accident (which could leave no home screen
+        // if HONOR's is hidden). Stop locking it to allow uninstalling again.
+        try { dpm.setUninstallBlocked(admin, pkg, true) } catch (e: Exception) { store.log("couldn't block uninstalling $pkg: ${e.message}") }
         store.setSetting(Store.S_HOME, pkg)
         store.log("home screen locked to $pkg")
         return "Done. The home button now always opens it."
@@ -212,6 +253,9 @@ class Installer(
 
     companion object {
         private val INSTALL_LOCK = Any()
+
+        /** The key HeliBoard signs its GitHub releases with (CN=Helium314, O=HeliBoard; APKMirror lists the same). */
+        val HELIBOARD = App("helium314.keyboard", "HeliBoard", setOf("5ec0a5313aa43558ee75b20b58ccd8194cdbf066df94a43ba288d933d60b86ce"))
 
         /** Published at f-droid.org/docs/Release_Channels_and_Signing_Keys. */
         val FDROID = App("org.fdroid.fdroid", "F-Droid", setOf("43238d512c1e5eb2d6569f4a3afbf5523418b82e0a3ed1552770abb9a9c9ccab"))
@@ -252,6 +296,23 @@ class Installer(
             if (!url.equals(expected, ignoreCase = true)) throw Net.NetError("the download link points somewhere unexpected")
             return Candidate(url, tag)
         }
+
+        /** HeliBoard: tag vX.Y, not a pre-release, and its "-release" APK inside that release. */
+        fun heliboardCandidate(js: Map<*, *>): Candidate {
+            val tag = js["tag_name"] as? String ?: throw Net.NetError("GitHub didn't say which HeliBoard is newest")
+            if (!HELI_TAG.matches(tag) || js["draft"] == true || js["prerelease"] == true)
+                throw Net.NetError("unexpected HeliBoard release \"$tag\"")
+            val asset = (js["assets"] as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }
+                .firstOrNull { HELI_ASSET.matches(it["name"] as? String ?: "") } ?: throw Net.NetError("the HeliBoard release has no app file")
+            val name = asset["name"] as String
+            val url = asset["browser_download_url"] as? String ?: throw Net.NetError("the HeliBoard release has no app file")
+            if (!url.equals("https://github.com/Helium314/HeliBoard/releases/download/$tag/$name", ignoreCase = true))
+                throw Net.NetError("the HeliBoard download link points somewhere unexpected")
+            return Candidate(url, tag)
+        }
+
+        private val HELI_TAG = Regex("^v[0-9][A-Za-z0-9._-]{0,40}$")
+        private val HELI_ASSET = Regex("^HeliBoard_[0-9][A-Za-z0-9._-]{0,40}-release\\.apk$")
 
         private val ASSET_URL = Regex("^https://github\\.com/LawnchairLauncher/lawnchair/releases/download/([A-Za-z0-9._-]{1,100})/([A-Za-z0-9._-]{1,200}\\.apk)$")
 
