@@ -12,7 +12,7 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * Installs and updates F-Droid and Lawnchair. Each download is only installed if:
+ * Installs and updates F-Droid, Lawnchair and this app itself. Each download is only installed if:
  *  - it came over HTTPS from the app's short list of hosts (see Net),
  *  - it's the expected app (package name),
  *  - it's signed with that project's known signing key (pinned below), and
@@ -23,6 +23,8 @@ class Installer(
     context: Context,
     private val net: Net = Net(),
     private val lawnchair: App = LAWNCHAIR,   // replaceable in tests
+    private val repo: String = BuildConfig.UPDATE_REPO,
+    private val selfSigner: String = BuildConfig.UPDATE_SIGNER,
 ) {
 
     private val ctx = context.applicationContext
@@ -62,6 +64,18 @@ class Installer(
         val js = MiniJson.parse(net.getText("https://api.github.com/repos/LawnchairLauncher/lawnchair/releases?per_page=20")) as? List<*>
             ?: throw Net.NetError("unexpected reply from GitHub")
         return lawnchairCandidate(js)
+    }
+
+    /** This app itself, as published on its own GitHub Releases page. */
+    val self: App? get() =
+        if (REPO_RE.matches(repo) && SIGNER_RE.matches(selfSigner)) App(ctx.packageName, "Honor Pad 8 Debloater", setOf(selfSigner)) else null
+
+    /** The newest release of this app (its version number is in the tag: v1.0.N). */
+    fun latestSelf(): Candidate {
+        if (self == null) throw Net.NetError("this copy wasn't built on GitHub, so it can't update itself; use the setup tool")
+        val js = MiniJson.parse(net.getText("https://api.github.com/repos/$repo/releases/latest")) as? Map<*, *>
+            ?: throw Net.NetError("unexpected reply from GitHub")
+        return selfCandidate(js, repo)
     }
 
     // ---------------------------------------------------------------- install
@@ -121,6 +135,36 @@ class Installer(
     }
 
     // ---------------------------------------------------------------- auto-update
+
+    /** Run by the daily job: Lawnchair first, then this app (installing its own update restarts it). */
+    fun autoUpdateAll() {
+        try {
+            autoUpdate()
+        } catch (e: Exception) {
+            store.log("Lawnchair auto-update didn't finish: ${e.message}")
+        }
+        autoUpdateSelf()
+    }
+
+    /** Update this app if there's a newer release and its automatic updates are on. */
+    fun autoUpdateSelf(): String? {
+        if (store.setting(Store.S_SELF_AUTO, "on") != "on" || self == null) return null
+        val c = latestSelf()
+        val before = store.setting(Store.S_SELF_TAG, "")
+        if (before == c.label) return null
+        // Recorded first: installing replaces this app and ends this process, so nothing after it may run.
+        store.setSetting(Store.S_SELF_TAG, c.label)
+        store.log("self-update: trying ${c.label}")
+        return try {
+            install(self!!, c)
+        } catch (e: SecurityException) {
+            store.log("self-update (${c.label}) refused: ${e.message}")
+            throw e                                  // stays recorded: a release that fails the checks isn't retried
+        } catch (e: Exception) {
+            store.setSetting(Store.S_SELF_TAG, before)   // network trouble: try this release again next time
+            throw e
+        }
+    }
 
     /** Run by the daily job: update Lawnchair if it's installed, auto-update is on, and there's a newer release. */
     fun autoUpdate(): String? {
@@ -191,6 +235,22 @@ class Installer(
             val vc = (js["suggestedVersionCode"] as? Long)?.toString()
             if (vc == null || !VERSION_CODE.matches(vc)) throw Net.NetError("f-droid.org didn't say which version to get")
             return Candidate("https://f-droid.org/repo/${FDROID.pkg}_$vc.apk", vc)
+        }
+
+        private val REPO_RE = Regex("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$")
+        private val SIGNER_RE = Regex("^[0-9a-f]{64}$")
+        private val SELF_TAG = Regex("^v1\\.0\\.[0-9]{1,9}$")
+
+        /** The app's own release: tag v1.0.N, and the APK file inside that release of this repository. */
+        fun selfCandidate(js: Map<*, *>, repo: String): Candidate {
+            val tag = js["tag_name"] as? String ?: throw Net.NetError("GitHub didn't say which version is newest")
+            if (!SELF_TAG.matches(tag) || js["draft"] == true) throw Net.NetError("unexpected release name \"$tag\"")
+            val asset = (js["assets"] as? List<*>).orEmpty().mapNotNull { it as? Map<*, *> }
+                .firstOrNull { it["name"] == "honor-pad-8-debloater.apk" } ?: throw Net.NetError("the release has no app file")
+            val url = asset["browser_download_url"] as? String ?: throw Net.NetError("the release has no app file")
+            val expected = "https://github.com/$repo/releases/download/$tag/honor-pad-8-debloater.apk"
+            if (!url.equals(expected, ignoreCase = true)) throw Net.NetError("the download link points somewhere unexpected")
+            return Candidate(url, tag)
         }
 
         private val ASSET_URL = Regex("^https://github\\.com/LawnchairLauncher/lawnchair/releases/download/([A-Za-z0-9._-]{1,100})/([A-Za-z0-9._-]{1,200}\\.apk)$")

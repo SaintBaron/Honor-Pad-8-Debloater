@@ -163,7 +163,6 @@ class Store(private val ctx: Context) {
         const val REMOVE = "remove.txt"       // packages to hide AND wipe: data cleared, updates stripped (user-editable)
         const val LOCKDOWN = "lockdown.txt"   // packages whose runtime permissions are locked off (user-editable)
         const val WIPED = "wiped.txt"         // remove-list packages already wiped since they were last visible
-        const val CHOSEN = "chosen.txt"       // packages you set yourself (defaults never touch apps you installed)
         const val SETTINGS = "settings.txt"   // privacy, security and app-install settings (key=value)
         const val APPROVED = "approved.txt"   // keyboards and accessibility apps you've approved
 
@@ -181,6 +180,8 @@ class Store(private val ctx: Context) {
         const val S_LAWNCHAIR_AUTO = "lawnchair_auto_update"
         const val S_LAWNCHAIR_TAG = "lawnchair_last_release"
         const val S_HOME = "home_locked_to"
+        const val S_SELF_AUTO = "self_auto_update"
+        const val S_SELF_TAG = "self_last_release"
         const val BASELINE = "baseline.txt"   // every package seen so far
         const val MANAGED = "managed.txt"     // packages this app has hidden or suspended
         const val LOCKED = "locked.txt"       // packages this app has locked permissions on

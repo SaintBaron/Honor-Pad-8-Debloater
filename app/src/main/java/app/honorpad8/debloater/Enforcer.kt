@@ -123,9 +123,6 @@ class Enforcer(context: Context) {
 
     private fun installedForUser(info: ApplicationInfo) = (info.flags and ApplicationInfo.FLAG_INSTALLED) != 0
 
-    private fun isSystemApp(info: ApplicationInfo) =
-        (info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
-
     @Suppress("DEPRECATION")
     private fun exists(p: String): Boolean = try {
         pm.getApplicationInfo(p, PackageManager.MATCH_UNINSTALLED_PACKAGES); true
@@ -165,7 +162,7 @@ class Enforcer(context: Context) {
             "com.google.android.permissioncontroller", "com.google.android.packageinstaller",
             "com.google.android.ext.services", "com.google.android.networkstack", "com.google.android.documentsui",
             "com.google.android.providers.media.module",
-            "com.hihonor.android.internal.app", "com.hihonor.android.launcher", "com.hihonor.systemmanager",
+            "com.hihonor.android.internal.app", "com.hihonor.android.launcher",
             "com.hihonor.systemserver", "com.hihonor.securityserver", "com.hihonor.securitypluginbase",
             "com.hihonor.permissioncontroller.overlay", "com.hihonor.keychain", "com.hihonor.ouc",
             "com.hihonor.iaware", "com.hihonor.powergenie", "com.hihonor.msdp", "com.hihonor.bluetooth",
@@ -246,10 +243,9 @@ class Enforcer(context: Context) {
         }
         val prot = protectedSet()
         val apps = allApps()
-        // Defaults only ever apply to preinstalled (system) apps. An app you installed yourself is only
-        // touched if you chose that for it in the app (or typed it into a list and saved).
-        val chosen = store.readSet(Store.CHOSEN)
-        fun applies(p: String) = !isProtected(p, prot) && (p in chosen || apps[p]?.let { isSystemApp(it) } != false)
+        // HONOR preinstalls some apps (Facebook, Netflix, Booking.com, WPS Office...) as ordinary apps
+        // rather than system apps, so the lists apply to every app that isn't a core part of the tablet.
+        fun applies(p: String) = !isProtected(p, prot)
         val toRemove = store.readList(Store.REMOVE).filter { applies(it) }.toSet()
         val wanted = store.readList(Store.BLOCK).filter { applies(it) }.toSet() + toRemove
         val managed = store.readSet(Store.MANAGED)
@@ -462,7 +458,6 @@ class Enforcer(context: Context) {
         if (!leave && isProtected(p)) return "That's a core part of the tablet, so it's never hidden."
         val wasWiped = p in store.readSet(Store.WIPED)
         store.setChoice(p, choice, label)
-        store.writeSet(Store.CHOSEN, store.readSet(Store.CHOSEN) + p)
         if (!leave) store.forgetNew(p)
         val name = label ?: p
         if (!isOwner()) return "Saved. It takes effect once the debloater is set up."

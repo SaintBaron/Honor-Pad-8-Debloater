@@ -44,7 +44,7 @@ CORE_PACKAGES = {
     "com.google.android.permissioncontroller", "com.google.android.packageinstaller",
     "com.google.android.ext.services", "com.google.android.networkstack", "com.google.android.documentsui",
     "com.google.android.providers.media.module",
-    "com.hihonor.android.internal.app", "com.hihonor.android.launcher", "com.hihonor.systemmanager",
+    "com.hihonor.android.internal.app", "com.hihonor.android.launcher",
     "com.hihonor.systemserver", "com.hihonor.securityserver", "com.hihonor.securitypluginbase",
     "com.hihonor.permissioncontroller.overlay", "com.hihonor.keychain", "com.hihonor.ouc",
     "com.hihonor.iaware", "com.hihonor.powergenie", "com.hihonor.msdp", "com.hihonor.bluetooth",

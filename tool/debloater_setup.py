@@ -187,8 +187,41 @@ def which(name: str) -> Optional[str]:
     return None
 
 
+def child_env() -> Optional[dict]:
+    """The packaged Linux build points LD_LIBRARY_PATH at its own bundled libraries. Programs it starts (adb,
+    pkexec, the file manager, the browser) must get the computer's own setting back, or they can load the
+    wrong copy of a library and crash. None means "inherit as is" (running from source, or on Windows)."""
+    if not getattr(sys, "frozen", False) or IS_WINDOWS:
+        return None
+    env = dict(os.environ)
+    orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if orig is not None:
+        env["LD_LIBRARY_PATH"] = orig
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def open_url(url: str) -> None:
+    """webbrowser.open with the computer's own library path (see child_env)."""
+    env = child_env()
+    if env is None:
+        webbrowser.open(url)
+        return
+    saved = dict(os.environ)
+    try:
+        os.environ.clear(); os.environ.update(env)
+        webbrowser.open(url)
+    finally:
+        os.environ.clear(); os.environ.update(saved)
+
+
 def _no_window() -> dict:
-    """Stop console windows flashing up on Windows when running adb."""
+    """Options for every program the tool starts: the computer's own library path (see child_env), and on
+    Windows, no console window flashing up."""
+    env = child_env()
+    if env is not None:
+        return {"env": env}
     if IS_WINDOWS:
         return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
     return {}
@@ -312,6 +345,94 @@ def parse_release(js: dict) -> Release:
 
 def latest_release(repo: str) -> Release:
     return parse_release(http_get_json(f"https://api.github.com/repos/{repo}/releases/latest"))
+
+
+# The setup tool itself, as built for each kind of computer (see .github/workflows/build.yml).
+TOOL_ASSETS = {
+    "windows": "HonorPad8Debloater-Setup-Windows.exe",
+    "mac": "HonorPad8Debloater-Setup-macOS.zip",
+    "linux": "HonorPad8Debloater-Setup-Linux",
+}
+SUMS_ASSET = "SHA256SUMS.txt"
+RELEASE_TAG_RE = re.compile(r"v1\.0\.[0-9]{1,9}")   # used with fullmatch: "$" would also allow a trailing newline
+
+
+def release_asset_url(repo: str, rel: Release, name: str) -> str:
+    """The download link for one file of a release, refused unless it's exactly where this project publishes it."""
+    if not RELEASE_TAG_RE.fullmatch(rel.tag or ""):
+        raise ValueError(f"unexpected release name {rel.tag!r}")
+    url = rel.assets.get(name)
+    if not url:
+        raise ValueError(f"the release has no {name}")
+    expected = f"https://github.com/{repo}/releases/download/{rel.tag}/{name}"
+    if url.lower() != expected.lower():
+        raise ValueError("the download link points somewhere unexpected")
+    return url
+
+
+def parse_sha256sums(text: str) -> dict:
+    """'<64 hex>  <name>' lines (sha256sum's format) -> {name: hex}."""
+    sums = {}
+    for line in text.splitlines():
+        m = re.match(r"^([0-9a-fA-F]{64}) [ *]?(\S.*)$", line.strip())
+        if m:
+            sums[m.group(2).strip()] = m.group(1).lower()
+    return sums
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def downloads_dir() -> Path:
+    d = Path.home() / "Downloads"
+    return d if d.is_dir() else data_dir()
+
+
+def download_tool_update(repo: str, rel: Release, dest_dir: Path, progress: Callable[[int, int], None]) -> Path:
+    """Download this tool's newest build for this computer and check it against the release's SHA256SUMS.txt.
+    Returns the saved file. A file that doesn't match is deleted."""
+    name = TOOL_ASSETS[platform_key()]
+    tool_url = release_asset_url(repo, rel, name)
+    sums_url = release_asset_url(repo, rel, SUMS_ASSET)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    sums_path = dest_dir / f".hp8d-sums-{safe_filename_part(rel.tag)}.txt"
+    try:
+        download(sums_url, sums_path, lambda d, t: None)
+        if sums_path.stat().st_size > 64 * 1024:
+            raise ValueError("the checksum list is unexpectedly large")
+        expected = parse_sha256sums(sums_path.read_text("utf-8", "replace")).get(name)
+    finally:
+        if sums_path.exists():
+            sums_path.unlink()
+    if not expected:
+        raise ValueError(f"the release's checksum list doesn't include {name}")
+    stem, dot, ext = name.partition(".")
+    dest = dest_dir / f"{stem}-{safe_filename_part(rel.version_name)}{dot}{ext}"
+    download(tool_url, dest, progress)
+    actual = sha256_file(dest)
+    if actual != expected:
+        dest.unlink()
+        raise ValueError("the download doesn't match the release's checksum, so it was deleted")
+    if not IS_WINDOWS and not name.endswith(".zip"):
+        dest.chmod(0o755)
+    return dest
+
+
+def show_in_folder(path: Path) -> None:
+    try:
+        if IS_WINDOWS:
+            subprocess.Popen(["explorer", "/select,", str(path)])  # noqa: S603 - fixed program, our own path
+        elif IS_MAC:
+            subprocess.Popen(["open", "-R", str(path)], **_no_window())
+        else:
+            subprocess.Popen(["xdg-open", str(path.parent)], **_no_window())
+    except OSError:
+        pass
 
 
 def safe_filename_part(text: str) -> str:
@@ -922,12 +1043,16 @@ def main() -> None:
             style.map("Quiet.TButton", background=[("active", C_BG), ("pressed", C_LINE)],
                       foreground=[("disabled", C_DISABLED_FG)])
 
-            style.configure("TCheckbutton", background=C_CARD, foreground=C_TEXT, indicatorcolor=C_FIELD,
+            # clam draws the box with indicatorbackground and the tick with indicatorforeground: a white tick
+            # on a blue box when ticked, an empty light box when not.
+            style.configure("TCheckbutton", background=C_CARD, foreground=C_TEXT,
                             indicatorbackground=C_FIELD, indicatorforeground="#ffffff", indicatorsize=16,
                             upperbordercolor=C_MUTED, lowerbordercolor=C_MUTED, indicatormargin=(0, 0, 10, 0),
                             padding=(0, 6))
             style.map("TCheckbutton", background=[("active", C_CARD)],
-                      indicatorcolor=[("selected", C_ACCENT), ("pressed", C_SOFT)])
+                      indicatorbackground=[("selected", C_ACCENT), ("pressed", C_SOFT_PRESSED)],
+                      indicatorforeground=[("selected", "#ffffff"), ("!selected", C_FIELD)],
+                      upperbordercolor=[("selected", C_ACCENT)], lowerbordercolor=[("selected", C_ACCENT)])
             style.configure("TEntry", fieldbackground=C_FIELD, bordercolor=C_LINE, lightcolor=C_FIELD,
                             darkcolor=C_FIELD, padding=(8, 6))
             style.configure("Horizontal.TProgressbar", background=C_ACCENT, troughcolor=C_TRACK,
@@ -1236,6 +1361,9 @@ def main() -> None:
 
         # ============================================================== steps
         def step_welcome(self) -> None:
+            # Filled in at the top of the page if a newer version of this tool is out (see check_tool_update).
+            self.update_box = ttk.Frame(self.body)
+            self.update_box.pack(anchor="w", fill="x")
             self.para("This tool sets up Honor Pad 8 Debloater on your tablet, or updates it if it's already set up. "
                       "It walks you through every step and checks each one worked before moving on.")
             ttk.Label(self.body, text="What the app does", font=self.f_head).pack(anchor="w", pady=(4, 2))
@@ -1255,9 +1383,6 @@ def main() -> None:
             var = tk.BooleanVar(value=False)
             ttk.Checkbutton(self.body, text="I understand I'll need to sign out of my accounts on the tablet for a few minutes",
                             variable=var, command=lambda: self.allow_next(var.get())).pack(anchor="w", pady=(6, 4))
-            self.update_banner = ttk.Label(self.body, text="", style="Warn.TLabel")
-            self.update_banner.pack(anchor="w", pady=(8, 0))
-            self.wrap(self.update_banner)
             self.check_tool_update()
 
         def check_tool_update(self) -> None:
@@ -1266,15 +1391,48 @@ def main() -> None:
                 return
 
             def done(rel, err):
-                if err or not rel:
+                if err or not rel or version_tuple(rel.version_name) <= version_tuple(tool_version):
                     return
-                if version_tuple(rel.version_name) > version_tuple(tool_version):
-                    self.set_status(self.update_banner,
-                                    f"A newer version of this tool ({rel.version_name}) is available on the Releases page.",
-                                    "warn")
-                    if rel.page_url.startswith("https://github.com/"):
-                        self.update_banner.bind("<Button-1>", lambda e: webbrowser.open(rel.page_url))
-                    self.update_banner.configure(cursor="hand2")
+                box = self.update_box
+                row = ttk.Frame(box)
+                row.pack(anchor="w", fill="x", pady=(0, 10))
+                msg = ttk.Label(row, text=f"Version {rel.version_name} of this tool is out.", style="Warn.TLabel",
+                                font=self.f_head, justify="left", wraplength=440)
+                msg.pack(side="left")
+                get = ttk.Button(row, text="Download it", style="Accent.TButton")
+                get.pack(side="left", padx=(12, 0))
+                page = None
+                if rel.page_url.startswith("https://github.com/"):
+                    page = ttk.Button(row, text="Releases page", style="Quiet.TButton",
+                                      command=lambda: open_url(rel.page_url))
+                    page.pack(side="left", padx=(4, 0))
+
+                def fetch():
+                    get.configure(state="disabled")
+                    self.set_status(msg, "Downloading and checking it...", "warn")
+                    gen = self.page_gen
+
+                    def progress(d, t):
+                        if self.page_gen == gen:   # don't draw over another page if they moved on
+                            self.set_progress(d, t, "Downloading the setup tool")
+
+                    def fetched(path, e):
+                        self.hide_progress()
+                        if e:
+                            get.configure(state="normal", text="Try again")
+                            self.log(f"Tool update failed: {e}")
+                            self.set_status(msg, "Couldn't download it: " + describe_network_error(e)[:90], "bad")
+                            return
+                        self.log(f"Saved the new tool to {path} (its checksum matches the release's SHA256SUMS.txt)")
+                        how = "unzip it and open the app inside" if path.suffix == ".zip" else "run it"
+                        where = "your Downloads folder" if path.parent.name == "Downloads" else str(path.parent)
+                        self.set_status(msg, f"Saved to {where} (checksum OK).\nClose this window, then {how}.", "good")
+                        get.configure(text="Show it", state="normal", command=lambda: show_in_folder(path))
+                        if page is not None:
+                            page.pack_forget()
+                        show_in_folder(path)
+                    self.background(lambda: download_tool_update(repo, rel, downloads_dir(), progress), fetched)
+                get.configure(command=fetch)
             self.background(lambda: latest_release(repo), done)
 
         # ---------------------------------------------------------------- tools
@@ -1335,7 +1493,7 @@ def main() -> None:
                 self.set_status(st, "Waiting for your password in the system prompt...", "")
 
                 def work():
-                    return subprocess.run(["pkexec"] + pac_cmd, capture_output=True, text=True).returncode
+                    return subprocess.run(["pkexec"] + pac_cmd, capture_output=True, text=True, **_no_window()).returncode
 
                 def finished(rc, err):
                     self.set_busy(False, dl, pac)
@@ -1483,7 +1641,7 @@ def main() -> None:
             self.set_status(st, "Waiting for your password in the system prompt...", "")
 
             def work():
-                return subprocess.run(["pkexec"] + cmd, capture_output=True, text=True).returncode
+                return subprocess.run(["pkexec"] + cmd, capture_output=True, text=True, **_no_window()).returncode
 
             def done(rc, err):
                 if err or rc != 0:
@@ -1818,6 +1976,11 @@ def main() -> None:
             self.complete()
 
     root = tk.Tk()
+    try:  # the same shield icon as the tablet app, for the window and taskbar
+        root._icon = tk.PhotoImage(file=str(resource_dir() / "icons" / "icon.png"))
+        root.iconphoto(True, root._icon)
+    except (tk.TclError, OSError):
+        pass
     root.app = App(root)  # reachable for automated tests
     root.mainloop()
 

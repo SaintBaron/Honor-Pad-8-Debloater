@@ -45,6 +45,7 @@ com.hihonor.android.projectmenu | remove | Engineering menu | Hidden engineering
 com.hihonor.detectrepair | remove | Smart Diagnosis | Hardware diagnostics that report to HONOR.
 com.hihonor.pcassistant | remove | HONOR Suite connector | Lets the HONOR PC Suite manage the tablet.
 com.hihonor.searchservice | remove | HONOR Search service | The background part of HONOR Search.
+com.hihonor.systemmanager | remove | System Manager (Optimiser) | HONOR's battery manager, app-launch control, cleaner, antivirus and data monitor. Its screens in Settings stop working; choose Leave to bring it back.
 com.hihonor.hiview | remove | System log collector | Collects system logs. Test for a day after removing it.
 com.hihonor.awareness | remove | Context awareness | Learns your habits to tune battery and notifications. Test after removing it.
 com.hihonor.brain | remove | AI engine | Suggestions behind the launcher and assistant. Test after removing it.
@@ -68,7 +69,7 @@ com.hihonor.calendar | remove | Calendar | Calendar app. Install another calenda
 com.hihonor.calculator | remove | Calculator | Calculator. Install another calculator first.
 com.hihonor.contacts | remove | Contacts | Contacts app. Your Google contacts still sync.
 com.hihonor.search | remove | HONOR Search | The home-screen search that asks you to accept its terms.
-com.hihonor.photos | leave | Gallery | HONOR's gallery. Install another gallery first.
+com.hihonor.photos | remove | Gallery | HONOR's gallery. Install another gallery first.
 com.hihonor.screenrecorder | remove | Screen recorder | Records the screen.
 com.hihonor.smartshot | remove | Gesture screenshots | Knuckle and gesture screenshots.
 com.hihonor.HnMultiScreenShot | remove | Scrolling screenshots | Long, scrolling screenshots.
@@ -150,7 +151,6 @@ com.google.android.packageinstaller | - | Package installer | Installs apps.
 com.google.android.documentsui | - | Files picker | The system file picker.
 com.hihonor.android.launcher | - | HONOR launcher | The home screen.
 com.hihonor.android.internal.app | - | HONOR framework | Part of the operating system.
-com.hihonor.systemmanager | - | Optimiser | Battery and app management.
 com.hihonor.systemserver | - | HONOR system server | Part of the operating system.
 com.hihonor.securityserver | - | Security server | Part of the operating system.
 com.hihonor.ouc | - | System update | Installs system updates.

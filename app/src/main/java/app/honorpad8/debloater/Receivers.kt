@@ -60,7 +60,9 @@ class EnforceJob : JobService() {
         if (params.extras.getString("task") == "update") {
             Thread {
                 try {
-                    if (Enforcer(this).isOwner()) Installer(this).autoUpdate()
+                    if (Enforcer(this).isOwner()) Installer(this).autoUpdateAll()
+                } catch (e: java.io.IOException) {
+                    Store(this).log("[app updates] ${NetDiagnosis.explain(this, e, "GitHub")}")
                 } catch (e: Exception) {
                     Store(this).log("[app updates] didn't finish: ${e.message}")
                 } finally {

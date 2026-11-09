@@ -101,7 +101,7 @@ Some packages are **never** hidden, whatever the list says:
 - **Core Android:** `android`, System UI, Settings, Phone, Shell, telephony, `com.android.providers.*`.
 - **Google Play services, Play Store and WebView.**
 - **The package installer and permission controller.**
-- **HONOR's core system:** framework resources, launcher, system manager, security, power management, sensors, Bluetooth, and the **system updater**. You keep getting security updates.
+- **HONOR's core system:** framework resources, launcher, security, power management, sensors, Bluetooth, and the **system updater**. You keep getting security updates.
 - **Chip vendor services:** `com.qualcomm.*`, `vendor.*` and `org.codeaurora.*` packages.
 - **Whatever your launcher and keyboard are right now**, so you can't hide your own home screen or lock yourself out of typing.
 - **This app itself.**
@@ -238,6 +238,13 @@ The app follows the tablet's light or dark mode. From top to bottom:
   nightly test builds are skipped). **Make it the home screen** locks the home button to Lawnchair, so HONOR can't switch it
   back; **Stop locking the home screen** undoes it. **Update it automatically** (on by default) checks once a day.
 
+- **Honor Pad 8 Debloater.** The app can update itself: **Check for an update** gets the newest release from this
+  project's own GitHub Releases page, and **Update it automatically** (on by default) checks once a day. Updating
+  closes the app's screen (open it again afterwards); the background checks carry on by themselves and your choices
+  are kept. Only a copy built by this
+  repository's GitHub Actions with the project's signing key can do this; a local or debug build says to use the setup
+  tool instead.
+
 See [Installing apps safely](#installing-apps-safely) for what's checked before anything is installed.
 
 ### Privacy and security settings
@@ -310,9 +317,9 @@ at the next check, but only for apps you haven't changed yourself. Anything you 
 
 | Group | Apps | Why |
 |---|---|---|
-| Preinstalled extras | Facebook and its background services and updater, Booking.com, WPS Office, Netflix (and its preload activator), SwiftKey (once you've switched to another keyboard) | Apps and background services you never chose to install |
-| HONOR background services | Push, diagnostics upload, log collector, regional auto-installer, app updater, Magazine Unlock, browser homepage, Caller ID, carrier location, language downloader, print plug-in, factory test, engineering menu, Smart Diagnosis, PC Suite connector, Search service, context awareness, AI engine, HONOR location, Trusted circle | Phone-home, tracking and silent installs |
-| HONOR apps | My HONOR, Tips, Weather, AI Lens, Backup, Device Clone, Email, Recorder, Video Editor, Notepad, Themes, Files, Calendar, Calculator, Contacts, Search, gesture and scrolling screenshots, screen recorder, YOYO suggestions, setup guide | Bundled apps with better alternatives |
+| Preinstalled extras | Facebook and its background services and updater, Booking.com, WPS Office, Netflix (and its preload activator), SwiftKey (once you've switched to another keyboard) | Apps and background services you never chose to install. HONOR installs some of these as ordinary apps, so Remove uninstalls them completely |
+| HONOR background services | Push, diagnostics upload, log collector, regional auto-installer, app updater, Magazine Unlock, browser homepage, Caller ID, carrier location, language downloader, print plug-in, factory test, engineering menu, Smart Diagnosis, PC Suite connector, Search service, context awareness, AI engine, HONOR location, Trusted circle, System Manager (Optimiser) | Phone-home, tracking and silent installs |
+| HONOR apps | Gallery, My HONOR, Tips, Weather, AI Lens, Backup, Device Clone, Email, Recorder, Video Editor, Notepad, Themes, Files, Calendar, Calculator, Contacts, Search, gesture and scrolling screenshots, screen recorder, YOYO suggestions, setup guide | Bundled apps with better alternatives |
 | HONOR Connect and sharing | All of it, including screen mirroring and Projection | Only useful with other HONOR devices |
 | Google apps | Meet, Gmail, YouTube Music, Drive, Google TV, Maps, the Google app (search, Assistant, Discover), Digital Wellbeing, Google Feedback, Timeline | Personal choice: choose Leave for any you use |
 | Google setup and telemetry | Mainline telemetry | Reporting only |
@@ -324,7 +331,7 @@ Google's setup leftovers: Setup Wizard, Partner Setup, Restore, the search-engin
 
 ### In the app, left alone by default
 
-HONOR Gallery, side dock, floating windows; Chrome, YouTube, Google Photos, Speech Services, the Accessibility Suite;
+HONOR's side dock and floating windows; Chrome, YouTube, Google Photos, Speech Services, the Accessibility Suite;
 the print spooler and print-service finder; the basic screensaver, Dynamic System Updates; and the mobile-network
 parts a Wi-Fi tablet doesn't use (in-call screen, MMS service, opportunistic network service, emergency alerts).
 
@@ -341,6 +348,12 @@ Some side effects to be aware of:
 - **SwiftKey**: the keyboard you're using is never hidden. Install another first (HeliBoard on F-Droid has no internet
   access), choose **Allow** for it under **Approve keyboards and accessibility apps**, then switch to it in Settings.
 - **HONOR location**: check a maps app still finds you afterwards. Google's location service takes over.
+- **HONOR Gallery**: install another gallery first (Fossify Gallery or Aves on F-Droid), or the camera's thumbnail has
+  nothing to open.
+- **System Manager (Optimiser)** is HONOR's battery manager, app-launch control, phone cleaner, antivirus scanner and data
+  monitor, all of which talk to HONOR. With it gone, those screens in Settings (Battery > App launch, Optimiser) stop
+  working, and HONOR's background-app killing stops with them. If anything misbehaves, choose **Leave** for it. If the
+  tablet ever became unusable, `adb shell pm unhide com.hihonor.systemmanager` brings it back from a computer.
 
 ### Permission-locked by default
 
@@ -356,12 +369,22 @@ becomes unusable, see [Troubleshooting](#troubleshooting).
 
 ### Updating
 
-Every change to this project publishes a new numbered release (`v1.0.N`). There are three ways to update the app on your
-tablet. Updates keep your lists and settings, and you **don't** need to remove your accounts again.
+Every change to this project publishes a new numbered release (`v1.0.N`). Updates keep your lists and settings, and you
+**don't** need to remove your accounts again.
 
-1. **With the setup tool (easiest).** Run it again and follow the steps. It sees the app is already set up, downloads and
-   verifies the newest version, installs it, and skips everything else. It also tells you if there's a newer version of
-   the tool itself.
+**The app updates itself.** Once a day it checks this project's Releases page and installs a newer version on its own,
+with no computer and no prompt (see [Apps](#apps) to check now, or to turn this off). It only installs a release signed
+with the project's key, and never an older one. This needs a copy installed from a release built on GitHub (v1.0.N with
+this feature, or later): the first time, update it one of the ways below.
+
+**The setup tool tells you when it's out of date.** When you open it, the first page offers **Download it** if there's a
+newer version. It saves the new tool for your computer into your Downloads folder, checks it against the release's
+`SHA256SUMS.txt`, and opens the folder. Close the old one and run the new one; you can delete the old copy.
+
+Other ways to update the app:
+
+1. **With the setup tool.** Run it again and follow the steps. It sees the app is already set up, downloads and
+   verifies the newest version, installs it, and skips everything else.
 2. **On the tablet with Obtainium.** [Obtainium](https://github.com/ImranR98/Obtainium) is a free app that watches GitHub
    releases and offers updates. Install Obtainium, tap **Add app**,
    paste this repository's address, and it will notify you of new versions. Each update asks you to confirm it.
@@ -393,32 +416,37 @@ A factory reset also removes it completely.
 
 | | |
 |---|---|
-| **Internet** | **Only to download F-Droid and Lawnchair** (see [Installing apps safely](#installing-apps-safely)). HTTPS to five fixed hosts (`f-droid.org`, `api.github.com`, `github.com`, and GitHub's two download hosts), nothing else. It sends nothing about the tablet. |
+| **Internet** | **Only to download F-Droid, Lawnchair and its own updates** (see [Installing apps safely](#installing-apps-safely)). HTTPS to five fixed hosts (`f-droid.org`, `api.github.com`, `github.com`, and GitHub's two download hosts), nothing else. It sends nothing about the tablet. |
 | **Permissions** | `RECEIVE_BOOT_COMPLETED` (run at boot), `POST_NOTIFICATIONS` (alerts), `QUERY_ALL_PACKAGES` (see which apps exist), `HIDE_OVERLAY_WINDOWS` (anti-tapjacking, below), `INTERNET` (the downloads above), `REQUEST_INSTALL_PACKAGES` and `REQUEST_DELETE_PACKAGES` (installing those apps, and stripping updates from apps set to Remove). |
 | **Data** | Only package names and its own log, in its private app storage, which no other app can read. No personal data is collected, stored or sent. Excluded from cloud backup and phone-to-phone transfer. |
 | **Code** | No third-party libraries in the app, no shell commands, no web views, no dynamic code loading. All network code is in one small file, `Net.kt`. |
 
 ### Installing apps safely
 
-The **Apps** card installs F-Droid and Lawnchair, and keeps Lawnchair up to date. Every download has to pass all of
-these before it's installed:
+The **Apps** card installs F-Droid and Lawnchair, and keeps Lawnchair and this app up to date. Every download has to
+pass all of these before it's installed:
 
-- **Where it comes from.** HTTPS only, and only from `f-droid.org` (F-Droid) or Lawnchair's own GitHub releases. Each
+- **Where it comes from.** HTTPS only, and only from `f-droid.org` (F-Droid), Lawnchair's own GitHub releases, or this
+  project's own releases (the repository the app was built from, fixed into the app when it's built). Each
   redirect is checked against the same short list, and a download link that isn't inside Lawnchair's own releases is
   refused. Plain HTTP, other hosts, other ports and certificates added to the tablet by a user or an app are all refused.
-- **What it is.** It must be the expected app (`org.fdroid.fdroid` or `app.lawnchair`), and not older than what's
-  installed: no downgrades.
+- **What it is.** It must be the expected app (`org.fdroid.fdroid`, `app.lawnchair` or `app.honorpad8.debloater`), and
+  newer than what's installed: no downgrades.
 - **Who signed it.** Its signing key must match the one pinned in the app: F-Droid's published key
   (`43238d51…c9ccab`, from [F-Droid's signing keys page](https://f-droid.org/docs/Release_Channels_and_Signing_Keys/)), and
   the key Lawnchair signs its GitHub releases with (`747c3645…2e4dc5`, `CN=Lawnchair`; the same fingerprint APKMirror lists for
-  the Lawnchair team's apps). Lawnchair's download link must also point at exactly one file in Lawnchair's own releases. Android itself then refuses any update signed with
+  the Lawnchair team's apps). This app's own updates must carry the project's key, the fingerprint in
+  `tool/trusted_signer.sha256` that the setup tool and the build also check. Lawnchair's download link must also point at exactly one file in Lawnchair's own releases. Android itself then refuses any update signed with
   a different key from the installed app.
 - **Size and format.** Downloads are capped in size and saved only in the app's private storage, then deleted. Release
   information is read with a strict parser that rejects anything malformed.
 
-Requests carry no cookies, IDs or tablet details, just a generic user agent. Lawnchair's automatic update checks once a
-day, only when there's a network, and only if Lawnchair is installed and **Update it automatically** is on. A release is
-only downloaded once; one that fails the checks isn't retried.
+Requests carry no cookies, IDs or tablet details, just a generic user agent. The automatic updates check once a day,
+only when there's a network, and only if **Update it automatically** is on (and, for Lawnchair, only if it's installed).
+A release is only downloaded once; one that fails the checks isn't retried.
+
+The setup tool's own update is checked against the release's `SHA256SUMS.txt`, which catches a broken or swapped
+download, though both come from the same GitHub release. It downloads only from that release, over HTTPS.
 
 ### How it's protected
 
@@ -595,6 +623,15 @@ debug key.
 
 ## Troubleshooting
 
+**Installing F-Droid or Lawnchair says "Unable to resolve f-droid.org" (or api.github.com).**
+The app couldn't look up the address, which on Android almost always means **this app's internet is being blocked**
+rather than the site being down. The app now says which of these it is:
+- *HONOR's per-app network control:* Settings > Apps > Apps > Honor Pad 8 Debloater > Data usage: turn on **Wi-Fi**
+  (and **Background data**). The app used to have no internet permission at all, so HONOR may have it switched off.
+- *Private DNS:* if you set one and websites don't load either, switch it off in **Privacy and security**.
+- *Always-on VPN in lockdown:* check the VPN app is connected, or release it in **Privacy and security**.
+
+
 **`Not allowed to set the device owner because there are already some accounts on the device`.**
 An account is still signed in. Run `adb shell dumpsys account | grep 'Account {'` to see which, and remove it in Settings.
 Accounts Settings doesn't show disappear when you remove the app that created them.
@@ -657,13 +694,14 @@ app/src/main/java/app/honorpad8/debloater/
   Catalogue.kt                    reads catalogue.txt; builds the default lists
   Receivers.kt                    device-admin receiver, boot receiver, scheduled job, notifications
   Hardening.kt                    privacy and security settings (backup, AI capture, users, keyboards, DNS, VPN)
-  Installer.kt                    downloads, checks and installs F-Droid and Lawnchair
+  Installer.kt                    downloads, checks and installs F-Droid, Lawnchair and its own updates
   Net.kt                          the only network code: HTTPS GETs to a fixed list of hosts
   MiniJson.kt                     a small strict JSON reader for the release feeds
   MainActivity.kt, Ui.kt          the app's screen and its look
 app/src/main/res/                 icon, device-admin policy, backup exclusion rules, HTTPS-only network config
 tool/debloater_setup.py           the setup and update tool (Python, standard library only)
 tool/scan_tablet.py               read-only scan of everything installed and running on the tablet
+tool/icons/                       the shield icon (same as the tablet app) for the packaged tool and its window
 tool/trusted_signer.sha256        fingerprint of the official signing key the tool checks downloads against
 tool/requirements-build.txt       exact, hash-pinned packages used to package the tool (not needed to run it)
 ```

@@ -38,7 +38,6 @@ class MainActivity : Activity() {
         val hide: Set<String>,
         val remove: Set<String>,
         val lock: Set<String>,
-        val chosen: Set<String>,
         val states: Map<String, Enforcer.AppState>,
         val news: List<String>,
         val last: List<String>,
@@ -57,15 +56,10 @@ class MainActivity : Activity() {
         fun setting(key: String, default: String) = settings[key] ?: default
         fun on(key: String) = setting(key, if (key in Hardening.DEFAULT_ON) "on" else "off") == "on"
 
-        /** What actually applies: defaults never touch an app you installed yourself unless you chose it. */
-        fun choice(p: String): Catalogue.Choice {
-            val st = states[p]
-            if (st != null && st.present && !st.system && p !in chosen) return Catalogue.Choice.LEAVE
-            return when (p) {
-                in remove -> Catalogue.Choice.REMOVE
-                in hide -> Catalogue.Choice.HIDE
-                else -> Catalogue.Choice.LEAVE
-            }
+        fun choice(p: String): Catalogue.Choice = when (p) {
+            in remove -> Catalogue.Choice.REMOVE
+            in hide -> Catalogue.Choice.HIDE
+            else -> Catalogue.Choice.LEAVE
         }
     }
 
@@ -148,7 +142,6 @@ class MainActivity : Activity() {
             hide = hide,
             remove = remove,
             lock = lock,
-            chosen = store.readSet(Store.CHOSEN),
             states = enforcer.states(pkgs, labels = pkgs - known.toSet()),
             news = news,
             last = store.readText(Store.LAST).lines().filter { it.isNotBlank() },
@@ -272,7 +265,7 @@ class MainActivity : Activity() {
 
         val foot = if (m.version.isNotEmpty()) "Version ${m.version}. " else ""
         content.addView(
-            ui.muted("${foot}The app only goes online to download F-Droid and Lawnchair. Nothing it sees leaves the tablet.", 12f).apply {
+            ui.muted("${foot}The app only goes online to download F-Droid, Lawnchair and its own updates. Nothing it sees leaves the tablet.", 12f).apply {
                 gravity = Gravity.CENTER
             },
             ui.lp(top = 12)
@@ -542,14 +535,29 @@ class MainActivity : Activity() {
 
     private fun appsCard(m: Model): View {
         val body = ui.vertical()
-        body.addView(ui.muted("Downloaded only from f-droid.org and Lawnchair's own GitHub page, over HTTPS, and installed " +
+        body.addView(ui.muted("Downloaded only from f-droid.org and each project's own GitHub page, over HTTPS, and installed " +
             "only if they're signed with that project's official key. Nothing about the tablet is sent."), ui.lp(top = 4, bottom = 4))
 
-        // F-Droid
+        // This app
+        val self = enforcer.installer().self
         body.addView(ui.divider(), ui.lp(top = 8))
+        body.addView(appHeader("Honor Pad 8 Debloater", BuildConfig.VERSION_NAME,
+            "This app. Updates come from its own GitHub Releases page and must carry the same signing key as this copy."), ui.lp(top = 10))
+        if (self != null) {
+            body.addView(ui.button("Check for an update", Ui.Kind.PRIMARY) {
+                run({ ownerOnly { online("github.com") { enforcer.installer().let { it.install(it.self!!, it.latestSelf()) } } } })
+            }, ui.lp(WRAP, top = 8))
+            body.addView(onOffRow("Update it automatically", "Checks once a day. This screen closes when it updates (open it again); your choices are kept.",
+                Store.S_SELF_AUTO, m.setting(Store.S_SELF_AUTO, "on") == "on"), ui.lp(top = 6))
+        } else {
+            body.addView(ui.muted("This copy wasn't built on GitHub, so it can't update itself. Use the setup tool to update it."), ui.lp(top = 6))
+        }
+
+        // F-Droid
+        body.addView(ui.divider(), ui.lp(top = 12))
         body.addView(appHeader("F-Droid", m.fdroid, "An app store for free and open-source apps. It keeps its own apps up to date."), ui.lp(top = 10))
         body.addView(ui.button(if (m.fdroid == null) "Install F-Droid" else "Update F-Droid", Ui.Kind.PRIMARY) {
-            run({ ownerOnly { enforcer.installer().let { it.install(Installer.FDROID, it.latestFdroid()) } } })
+            run({ ownerOnly { online("f-droid.org") { enforcer.installer().let { it.install(Installer.FDROID, it.latestFdroid()) } } } })
         }, ui.lp(WRAP, top = 8))
 
         // Lawnchair
@@ -557,7 +565,7 @@ class MainActivity : Activity() {
         body.addView(appHeader("Lawnchair", m.lawnchair, "A clean, Pixel-style home screen. Its releases are marked beta."), ui.lp(top = 10))
         val row = ui.horizontal()
         row.addView(ui.button(if (m.lawnchair == null) "Install Lawnchair" else "Check for an update", Ui.Kind.PRIMARY) {
-            run({ ownerOnly { enforcer.installer().let { it.install(Installer.LAWNCHAIR, it.latestLawnchair()) } } })
+            run({ ownerOnly { online("github.com") { enforcer.installer().let { it.install(Installer.LAWNCHAIR, it.latestLawnchair()) } } } })
         })
         if (m.lawnchair != null) {
             row.addView(View(this), LinearLayout.LayoutParams(ui.dp(8), 1))
@@ -713,6 +721,13 @@ class MainActivity : Activity() {
         suppressSwitch = false
     }
 
+    /** Run a download, and explain network failures in a way you can act on. */
+    private fun online(host: String, job: () -> String): String = try {
+        job()
+    } catch (e: java.io.IOException) {
+        NetDiagnosis.explain(this, e, host)
+    }
+
     /** Installing needs the device-owner role (for the silent install). */
     private fun ownerOnly(job: () -> String): String =
         if (!enforcer.isOwner()) "Set the debloater up first: installing apps needs its device-owner role." else job()
@@ -754,8 +769,6 @@ class MainActivity : Activity() {
                 store.writeRaw(Store.BLOCK, b)
                 store.writeRaw(Store.REMOVE, r)
                 store.writeRaw(Store.LOCKDOWN, l)
-                // Typed in by you, so it applies even to apps you installed yourself.
-                store.writeSet(Store.CHOSEN, store.readSet(Store.CHOSEN) + Store.parse(b) + Store.parse(r))
                 enforcer.enforce("manual", notify = false)?.summary()?.let { "Saved: $it" } ?: "Saved. It takes effect once the debloater is set up."
             }) { blockDraft = null; removeDraft = null; lockDraft = null }
         })
