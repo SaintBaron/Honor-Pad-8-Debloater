@@ -91,10 +91,10 @@ class Hardening(
             if (on(key)) for (x in restrictions) check("restriction $x") { r.getBoolean(x, false) }
         }
         if (on(Store.S_BACKUP_OFF)) check("cloud backup off") { !dpm.isBackupServiceEnabled(admin) }
-        if (on(Store.S_REDACT_LOCKSCREEN)) check("lock-screen notification text hidden") {
+        if (on(Store.S_REDACT_LOCKSCREEN)) check("Hide notification text on the lock screen") {
             dpm.getKeyguardDisabledFeatures(admin) and REDACT != 0
         }
-        if (on(Store.S_NO_SMART_LOCK)) check("Smart Lock off") { dpm.getKeyguardDisabledFeatures(admin) and NO_TRUST != 0 }
+        if (on(Store.S_NO_SMART_LOCK)) check("Turn off Smart Lock") { dpm.getKeyguardDisabledFeatures(admin) and NO_TRUST != 0 }
         if (on(Store.S_USB_CHARGE_ONLY) && usbDataSupported()) check("USB set to charging only") { !dpm.isUsbDataSignalingEnabled }
         if (on(Store.S_APPROVE_INPUT)) {
             check("keyboards limited to approved ones") { dpm.getPermittedInputMethods(admin) != null }

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-policies />
+    <uses-policies>
+        <!-- Needed for setKeyguardDisabledFeatures: Smart Lock off, and hiding notification text on the lock
+             screen. Android checks this even for a device owner. -->
+        <disable-keyguard-features />
+    </uses-policies>
 </device-admin>
