@@ -278,7 +278,7 @@ hidden, choose **Leave** for HONOR Home (under HONOR apps): Lawnchair stays the 
   back; **Stop locking the home screen** undoes it. While it's locked as the home screen it can't be uninstalled, so
   the tablet can't be left without one. **Update it automatically** (on by default) checks once a day.
 - **HeliBoard.** An open-source keyboard with no internet access. **Install HeliBoard** gets the newest stable release
-  (pre-releases are skipped) from HeliBoard's GitHub page. **Use it as the keyboard** allows it and switches to it, and
+  (pre-releases are skipped) from HeliBoard's GitHub page (`HeliBorg/HeliBoard`). **Use it as the keyboard** allows it and switches to it, and
   SwiftKey is then removed. **Update it automatically** (on by default) checks once a day.
 
 - **Honor Pad 8 Debloater.** The app can update itself: **Check for an update** gets the newest release from this

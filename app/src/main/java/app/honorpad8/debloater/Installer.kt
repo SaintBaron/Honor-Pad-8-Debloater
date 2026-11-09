@@ -69,7 +69,7 @@ class Installer(
 
     /** The newest stable HeliBoard release on its GitHub page (pre-releases are skipped). */
     fun latestHeliboard(): Candidate {
-        val js = MiniJson.parse(net.getText("https://api.github.com/repos/Helium314/HeliBoard/releases/latest")) as? Map<*, *>
+        val js = MiniJson.parse(net.getText("https://api.github.com/repos/$HELI_REPO/releases/latest")) as? Map<*, *>
             ?: throw Net.NetError("unexpected reply from GitHub")
         return heliboardCandidate(js)
     }
@@ -306,11 +306,15 @@ class Installer(
                 .firstOrNull { HELI_ASSET.matches(it["name"] as? String ?: "") } ?: throw Net.NetError("the HeliBoard release has no app file")
             val name = asset["name"] as String
             val url = asset["browser_download_url"] as? String ?: throw Net.NetError("the HeliBoard release has no app file")
-            if (!url.equals("https://github.com/Helium314/HeliBoard/releases/download/$tag/$name", ignoreCase = true))
+            // The project moved from Helium314/HeliBoard to HeliBorg/HeliBoard (GitHub redirects the old address);
+            // accept a link inside either, nothing else.
+            if (HELI_REPOS.none { url.equals("https://github.com/$it/releases/download/$tag/$name", ignoreCase = true) })
                 throw Net.NetError("the HeliBoard download link points somewhere unexpected")
             return Candidate(url, tag)
         }
 
+        const val HELI_REPO = "HeliBorg/HeliBoard"
+        private val HELI_REPOS = listOf(HELI_REPO, "Helium314/HeliBoard")
         private val HELI_TAG = Regex("^v[0-9][A-Za-z0-9._-]{0,40}$")
         private val HELI_ASSET = Regex("^HeliBoard_[0-9][A-Za-z0-9._-]{0,40}-release\\.apk$")
 
