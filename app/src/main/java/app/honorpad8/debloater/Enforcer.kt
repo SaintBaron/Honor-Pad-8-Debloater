@@ -10,12 +10,19 @@ import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
 import android.os.Build
 import android.provider.Settings
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Applies the policy:
- *  - packages in blocklist.txt that are installed for this user get hidden (suspended if hiding is refused)
- *  - packages dropped from blocklist.txt get unhidden
- *  - packages in lockdown.txt (and any that couldn't be hidden) get their runtime permissions locked off
+ *  - packages on the hide list (blocklist.txt) or the remove list (remove.txt) that are installed for
+ *    this user get hidden (suspended if hiding is refused)
+ *  - packages on the remove list also get their data wiped and their Play Store updates stripped,
+ *    once, and again whenever an update brings them back
+ *  - packages dropped from both lists get unhidden
+ *  - packages on the lock list (lockdown.txt), and any that couldn't be hidden, get their runtime
+ *    permissions locked off
  *  - system/vendor packages that weren't on the device before get flagged in new.txt and a notification
  *
  * Every step is idempotent: running it twice in a row changes nothing the second time.
@@ -30,6 +37,54 @@ class Enforcer(context: Context) {
 
     fun isOwner(): Boolean = dpm.isDeviceOwnerApp(ctx.packageName)
 
+    fun hardening() = Hardening(ctx, dpm, admin, store)
+
+    fun installer() = Installer(ctx)
+
+    /** Change a privacy/security setting and apply it straight away. Returns a message for the screen. */
+    fun applySetting(key: String, value: String): String = synchronized(LOCK) {
+        val previous = store.setting(key, "\u0000")
+        store.setSetting(key, value)
+        if (!isOwner()) return "Saved. It takes effect once the debloater is set up."
+        hardening().apply()
+        // Private DNS and the VPN can be refused (resolver unreachable, app doesn't support always-on).
+        // Then put the setting back, so the screen shows what's really in force.
+        fun undo(msg: String): String {
+            if (previous == "\u0000") store.setSetting(key, if (key == Store.S_DNS) "off" else "") else store.setSetting(key, previous)
+            hardening().apply()
+            return msg
+        }
+        when (key) {
+            Store.S_DNS -> {
+                val host = Hardening.dnsHost(value)
+                if (host != null && (dpm.getGlobalPrivateDnsMode(admin) != DevicePolicyManager.PRIVATE_DNS_MODE_PROVIDER_HOSTNAME ||
+                        dpm.getGlobalPrivateDnsHost(admin) != host)) {
+                    return undo("Couldn't switch to $host: Android couldn't reach it. Check the tablet's online and try again.")
+                }
+            }
+            Store.S_VPN -> if (value.isNotEmpty() && dpm.getAlwaysOnVpnPackage(admin) != value) {
+                return undo("That app can't be locked on as an always-on VPN. Open it and set it up first, or pick another.")
+            }
+        }
+        "Done."
+    }
+
+    /** Allow or block one keyboard / accessibility app, and apply it. */
+    fun setInputApproved(pkg: String, allow: Boolean): String = synchronized(LOCK) {
+        val h = hardening()
+        h.setApproved(pkg, allow)
+        if (!isOwner()) return "Saved. It takes effect once the debloater is set up."
+        h.apply()
+        if (!allow && pkg in EnabledServices.packages(ctx)) "It's switched on right now, so it stays allowed until you turn it off in Settings."
+        else "Done."
+    }
+
+    /** Lock the home screen to [pkg] (or unlock it with null). */
+    fun forceHome(pkg: String?): String = synchronized(LOCK) {
+        if (!isOwner()) return "The debloater isn't set up."
+        installer().forceHome(dpm, admin, pkg)
+    }
+
     data class Report(
         val hidden: List<String>,
         val suspended: List<String>,
@@ -38,10 +93,12 @@ class Enforcer(context: Context) {
         val fresh: List<String>,
         val lockedPerms: Int,
         val newlyFailed: List<String> = failed,
+        val wiped: List<String> = emptyList(),
     ) {
         fun summary(): String {
             val parts = mutableListOf<String>()
             if (hidden.isNotEmpty()) parts += "hid ${hidden.size}: ${hidden.joinToString()}"
+            if (wiped.isNotEmpty()) parts += "wiped ${wiped.size}: ${wiped.joinToString()}"
             if (suspended.isNotEmpty()) parts += "suspended ${suspended.size}: ${suspended.joinToString()}"
             if (failed.isNotEmpty()) parts += "couldn't block ${failed.size}: ${failed.joinToString()}"
             if (restored.isNotEmpty()) parts += "restored ${restored.size}: ${restored.joinToString()}"
@@ -52,7 +109,8 @@ class Enforcer(context: Context) {
 
         /** Worth a notification: something changed. A package that keeps failing is only reported the first time. */
         val notable: Boolean
-            get() = hidden.isNotEmpty() || suspended.isNotEmpty() || newlyFailed.isNotEmpty() || fresh.isNotEmpty()
+            get() = hidden.isNotEmpty() || suspended.isNotEmpty() || newlyFailed.isNotEmpty() || fresh.isNotEmpty() ||
+                wiped.isNotEmpty()
     }
 
     // ---------------------------------------------------------------- packages
@@ -64,6 +122,9 @@ class Enforcer(context: Context) {
         ).associateBy { it.packageName }
 
     private fun installedForUser(info: ApplicationInfo) = (info.flags and ApplicationInfo.FLAG_INSTALLED) != 0
+
+    private fun isSystemApp(info: ApplicationInfo) =
+        (info.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0
 
     @Suppress("DEPRECATION")
     private fun exists(p: String): Boolean = try {
@@ -113,6 +174,9 @@ class Enforcer(context: Context) {
         defaultIme()?.let { s += it }
         return s
     }
+
+    /** Core packages that are never hidden or locked, whatever the lists say. */
+    fun isProtected(p: String): Boolean = isProtected(p, protectedSet())
 
     private fun isProtected(p: String, prot: Set<String>) =
         p in prot || p.startsWith("com.android.providers.") || p.startsWith("com.qualcomm.") ||
@@ -165,7 +229,12 @@ class Enforcer(context: Context) {
 
     // ----------------------------------------------------------------- actions
 
-    fun enforce(trigger: String): Report? = synchronized(LOCK) {
+    /**
+     * Apply the lists. [notify] = false for changes the user just made on the screen.
+     * [wipe] = false skips wiping remove-list apps (used at boot, where time is short; the run a few
+     * minutes later does it). Those apps are still hidden straight away.
+     */
+    fun enforce(trigger: String, notify: Boolean = true, wipe: Boolean = true): Report? = synchronized(LOCK) {
         if (!isOwner()) {
             store.log("[$trigger] not device owner, nothing enforced")
             return null
@@ -177,8 +246,15 @@ class Enforcer(context: Context) {
         }
         val prot = protectedSet()
         val apps = allApps()
-        val wanted = store.readList(Store.BLOCK).filterNot { isProtected(it, prot) }.toSet()
+        // Defaults only ever apply to preinstalled (system) apps. An app you installed yourself is only
+        // touched if you chose that for it in the app (or typed it into a list and saved).
+        val chosen = store.readSet(Store.CHOSEN)
+        fun applies(p: String) = !isProtected(p, prot) && (p in chosen || apps[p]?.let { isSystemApp(it) } != false)
+        val toRemove = store.readList(Store.REMOVE).filter { applies(it) }.toSet()
+        val wanted = store.readList(Store.BLOCK).filter { applies(it) }.toSet() + toRemove
         val managed = store.readSet(Store.MANAGED)
+        val wiped = store.readSet(Store.WIPED)
+        val wipedNow = mutableListOf<String>()
 
         val hid = mutableListOf<String>()
         val susp = mutableListOf<String>()
@@ -193,6 +269,7 @@ class Enforcer(context: Context) {
                 if (hidden(p)) dpm.setApplicationHidden(admin, p, false)
                 if (suspended(p)) dpm.setPackagesSuspended(admin, arrayOf(p), false)
                 managed -= p
+                wiped -= p
                 restored += p
                 store.log("restored $p (no longer on the list)")
             } catch (e: Exception) {
@@ -206,14 +283,16 @@ class Enforcer(context: Context) {
             if (hidden(p) || suspended(p)) { managed += p; continue }
             if (!installedForUser(info)) continue           // still uninstalled for user 0
             try {
+                // It was visible until now, so it may have stored new data: a remove-list app gets wiped again.
+                // (One that can't be hidden at all is wiped once, not on every run.)
                 if (dpm.setApplicationHidden(admin, p, true)) {
-                    hid += p; managed += p
+                    hid += p; managed += p; wiped -= p
                     store.log("hid $p")
                     continue
                 }
                 val refused = dpm.setPackagesSuspended(admin, arrayOf(p), true)
                 if (refused.isEmpty()) {
-                    susp += p; managed += p
+                    susp += p; managed += p; wiped -= p
                     store.log("couldn't hide $p, suspended it instead")
                 } else {
                     failed += p
@@ -225,6 +304,17 @@ class Enforcer(context: Context) {
             }
         }
         store.writeSet(Store.MANAGED, managed)
+
+        // 2b. Remove list: wipe data and strip updates, once per time it's been visible.
+        if (wipe) {
+            for (p in toRemove.sorted()) {
+                if (p in wiped || apps[p] == null) continue
+                wipeOne(p, apps[p]!!)
+                wiped += p
+                wipedNow += p
+            }
+        }
+        store.writeSet(Store.WIPED, wiped.filter { it in toRemove }.toSet())
 
         // 3. Lock runtime permissions off for lockdown packages and anything that couldn't be blocked.
         val lockTargets = (store.readList(Store.LOCKDOWN) + failed)
@@ -246,6 +336,9 @@ class Enforcer(context: Context) {
         store.writeSet(Store.LOCKED, locked)
 
         protectSelf()
+
+        // 3b. Privacy and security settings (backup, AI screen capture, users, keyboards, DNS, VPN...).
+        hardening().apply()
 
         // The app's own notifications (needed on Android 13+).
         if (Build.VERSION.SDK_INT >= 33) {
@@ -270,10 +363,169 @@ class Enforcer(context: Context) {
         val previouslyFailed = store.readSet(Store.FAILED)
         val newlyFailed = failed.filter { it !in previouslyFailed }
         store.writeSet(Store.FAILED, failed.toSet())
-        val report = Report(hid, susp, failed, restored, fresh, lockedPerms, newlyFailed)
+        val report = Report(hid, susp, failed, restored, fresh, lockedPerms, newlyFailed, wipedNow)
         store.log("[$trigger] ${report.summary()}")
-        if (report.notable) Notifier.show(ctx, "Honor Pad 8 Debloater", report.summary())
+        try { store.writeRaw(Store.LAST, "${Store.now()}\n${report.summary()}") } catch (e: Exception) { }
+        if (notify && report.notable) Notifier.show(ctx, "Honor Pad 8 Debloater", report.summary())
         return report
+    }
+
+    /**
+     * Wipe one app's data, and strip its Play Store updates (system apps) or uninstall it outright
+     * (apps you installed yourself). Failures are logged and not retried until it's next visible.
+     */
+    private fun wipeOne(p: String, info: ApplicationInfo) {
+        val ok = AtomicBoolean(false)
+        val done = CountDownLatch(1)
+        try {
+            dpm.clearApplicationUserData(admin, p, { it.run() }) { _, succeeded ->
+                ok.set(succeeded)
+                done.countDown()
+            }
+            if (!done.await(20, TimeUnit.SECONDS)) store.log("wiping $p's data is taking a while; carrying on")
+            store.log(if (ok.get()) "wiped $p's data" else "couldn't wipe $p's data")
+        } catch (e: Exception) {
+            store.log("couldn't wipe $p's data: ${e.message}")
+        }
+        val system = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+        val updated = (info.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+        if (system && !updated) return
+        try {
+            pm.packageInstaller.uninstall(p, PackageResultReceiver.sender(ctx, p))
+            store.log(if (system) "stripping $p's updates" else "uninstalling $p (an app you installed)")
+        } catch (e: Exception) {
+            store.log("couldn't ${if (system) "strip $p's updates" else "uninstall $p"}: ${e.message}")
+        }
+    }
+
+    // ------------------------------------------------------- one app at a time
+
+    /** What the screen shows for one package. */
+    data class AppState(
+        val pkg: String,
+        val present: Boolean,     // on this tablet at all
+        val installed: Boolean,   // installed for this user (false = removed with adb, or hidden)
+        val hidden: Boolean,
+        val suspended: Boolean,
+        val failed: Boolean,      // the system refused to hide or suspend it
+        val locked: Boolean,      // permissions locked off by the debloater
+        val system: Boolean,
+        val label: String?,
+    ) {
+        /** Removed for this user some other way (usually adb before setup), not by the debloater. */
+        val removedEarlier get() = present && !installed && !hidden
+    }
+
+    /** [labels]: which packages to read names for (reading a name loads that app's resources, so it's slow). */
+    @Suppress("DEPRECATION")
+    fun states(pkgs: Collection<String>, labels: Collection<String> = pkgs): Map<String, AppState> {
+        val owner = isOwner()
+        val failed = store.readSet(Store.FAILED)
+        val locked = store.readSet(Store.LOCKED)
+        return pkgs.associateWith { p ->
+            val info = try {
+                pm.getApplicationInfo(p, PackageManager.MATCH_UNINSTALLED_PACKAGES)
+            } catch (e: Exception) {
+                null
+            }
+            val systemFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+            AppState(
+                pkg = p,
+                present = info != null,
+                installed = info != null && installedForUser(info),
+                hidden = info != null && owner && hidden(p),
+                suspended = info != null && owner && suspended(p),
+                failed = p in failed,
+                locked = p in locked,
+                system = info != null && (info.flags and systemFlags) != 0,
+                label = if (info != null && p in labels) label(info) else null,
+            )
+        }
+    }
+
+    private fun label(info: ApplicationInfo): String? = try {
+        Store.cleanLabel(pm.getApplicationLabel(info).toString()).takeIf { it.isNotBlank() && it != info.packageName }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** Old two-way form: hide (true) or leave (false). */
+    fun setHidden(p: String, on: Boolean, label: String? = null): String =
+        setChoice(p, if (on) Catalogue.Choice.HIDE else Catalogue.Choice.LEAVE, label)
+
+    /**
+     * Set an app to leave, hide or remove, and apply it straight away. Leave also brings back an app
+     * that was removed earlier with adb. Returns a short message for the screen.
+     */
+    fun setChoice(p: String, choice: Catalogue.Choice, label: String? = null): String = synchronized(LOCK) {
+        val leave = choice == Catalogue.Choice.LEAVE
+        if (!leave && isProtected(p)) return "That's a core part of the tablet, so it's never hidden."
+        val wasWiped = p in store.readSet(Store.WIPED)
+        store.setChoice(p, choice, label)
+        store.writeSet(Store.CHOSEN, store.readSet(Store.CHOSEN) + p)
+        if (!leave) store.forgetNew(p)
+        val name = label ?: p
+        if (!isOwner()) return "Saved. It takes effect once the debloater is set up."
+        enforce("app: ${choice.name.lowercase()} $p", notify = false)
+        if (leave) {
+            val back = show(p, label)
+            if (back != null) return back
+        }
+        val st = states(listOf(p))[p]!!
+        val gone = st.hidden || st.suspended || !st.installed
+        when {
+            !st.present -> if (leave) "$name isn't on this tablet." else "$name isn't on this tablet. It'll be ${if (choice == Catalogue.Choice.REMOVE) "removed" else "hidden"} if it ever turns up."
+            leave -> if (wasWiped) "$name is back. Its data was wiped, so it starts fresh." else "$name is back."
+            choice == Catalogue.Choice.REMOVE && gone && !st.suspended -> "$name is removed: hidden, with its data wiped."
+            choice == Catalogue.Choice.REMOVE && st.suspended -> "$name couldn't be hidden, so it's paused and its data wiped."
+            st.hidden -> "$name is hidden."
+            st.suspended -> "$name couldn't be hidden, so it's paused instead."
+            st.removedEarlier -> "$name was already removed. It'll stay hidden if an update brings it back."
+            else -> "$name couldn't be hidden or paused. Its permissions are locked off instead."
+        }
+    }
+
+    /** Switch a permission lock on or off. */
+    fun setLocked(p: String, on: Boolean, label: String? = null): String = synchronized(LOCK) {
+        if (on && isProtected(p)) return "That's a core part of the tablet, so it's never locked."
+        store.setListed(Store.LOCKDOWN, p, on, label)
+        val name = label ?: p
+        if (!isOwner()) return "Saved. It takes effect once the debloater is set up."
+        enforce("switch: ${if (on) "lock" else "unlock"} $p", notify = false)
+        when {
+            !exists(p) -> "$name isn't on this tablet."
+            on -> "$name's permissions are locked off."
+            else -> "$name's permissions are back to normal. Grant them again in Settings if you want."
+        }
+    }
+
+    /**
+     * Bring one app back: un-hide, un-pause, and reinstall it for this user if it was removed earlier
+     * (only possible for system apps). Returns a message if something needed saying, else null.
+     */
+    fun show(p: String, label: String? = null): String? = synchronized(LOCK) {
+        if (!isOwner()) return "The debloater isn't set up, so it can't bring apps back."
+        try {
+            if (hidden(p)) dpm.setApplicationHidden(admin, p, false)
+            if (suspended(p)) dpm.setPackagesSuspended(admin, arrayOf(p), false)
+        } catch (e: Exception) {
+            store.log("couldn't show $p: ${e.message}")
+        }
+        store.writeSet(Store.MANAGED, store.readSet(Store.MANAGED) - p)
+        store.writeSet(Store.FAILED, store.readSet(Store.FAILED) - p)
+        store.writeSet(Store.WIPED, store.readSet(Store.WIPED) - p)
+        val st = states(listOf(p))[p] ?: return null
+        if (!st.present || st.installed) return null
+        val name = label ?: st.label ?: p
+        if (!st.system) return "$name was removed earlier and isn't a system app. Reinstall it from the Play Store."
+        return try {
+            dpm.enableSystemApp(admin, p)
+            store.log("reinstalled $p for this user")
+            "$name is back."
+        } catch (e: Exception) {
+            store.log("couldn't reinstall $p: ${e.message}")
+            "Couldn't bring $name back: ${e.message}"
+        }
     }
 
     /** Add every package that's currently uninstalled for this user (or hidden) to the blocklist. */
@@ -285,7 +537,7 @@ class Enforcer(context: Context) {
             .filter { !installedForUser(it) || (owner && hidden(it.packageName)) }
             .map { it.packageName }
             .filterNot { isProtected(it, prot) }
-        val current = store.readList(Store.BLOCK).toSet()
+        val current = (store.readList(Store.BLOCK) + store.readList(Store.REMOVE)).toSet()
         val added = gone.filterNot { it in current }.sorted()
         if (added.isNotEmpty()) {
             val raw = store.readRaw(Store.BLOCK).trimEnd()
@@ -300,36 +552,40 @@ class Enforcer(context: Context) {
     }
 
     /**
-     * When an app update ships new entries in the default list, add them to this device's list.
-     * Each default is only ever offered once, so anything you deliberately removed stays removed.
+     * When an app update changes the defaults (a new app to hide or remove, or an app moved from
+     * hide to remove), apply the change to this device. Each default is only applied once, and only
+     * if you haven't changed that app yourself, so your own choices always stay.
+     * defaults_seen.txt records "package=choice" for what was last offered (a bare name means hide).
      */
     private fun mergeNewDefaults() {
-        val shipped = try {
-            Store.parse(ctx.assets.open(Store.BLOCK).bufferedReader().use { it.readText() })
-        } catch (e: Exception) {
-            return
-        }
+        val cat = Catalogue.get(ctx)
+        val shipped = cat.defaultChoices()
         if (shipped.isEmpty()) return
-        val seen = store.readSet(Store.DEFAULTS_SEEN)
-        if (seen.isEmpty()) {
+        val seenRaw = store.readSet(Store.DEFAULTS_SEEN)
+        fun key(c: Catalogue.Choice) = c.name.lowercase()
+        val record = shipped.mapValues { key(it.value) }
+        if (seenRaw.isEmpty()) {
             // First run (or first run of a version with this feature): today's defaults count as offered.
-            store.readList(Store.BLOCK)   // seeds the list from the defaults on a fresh install
-            store.writeSet(Store.DEFAULTS_SEEN, shipped.toSet())
+            store.readList(Store.BLOCK)    // seeds the lists from the defaults on a fresh install
+            store.readList(Store.REMOVE)
+            store.writeSet(Store.DEFAULTS_SEEN, record.map { "${it.key}=${it.value}" }.toSet())
             return
         }
-        val fresh = shipped.filter { it !in seen }
-        if (fresh.isEmpty()) return
-        val current = store.readList(Store.BLOCK).toSet()
-        val toAdd = fresh.filter { it !in current }
-        if (toAdd.isNotEmpty()) {
-            val raw = store.readRaw(Store.BLOCK).trimEnd()
-            store.writeRaw(
-                Store.BLOCK,
-                "$raw\n\n# added by an app update ${Store.now()}\n${toAdd.joinToString("\n")}\n"
-            )
-            store.log("app update added ${toAdd.size} new default(s) to the list: ${toAdd.joinToString()}")
+        val seen = seenRaw.associate { e -> e.substringBefore('=') to e.substringAfter('=', "hide") }
+        val changes = mutableMapOf<String, Catalogue.Choice>()
+        for ((p, choice) in shipped) {
+            val was = seen[p]
+            if (was == key(choice)) continue
+            val current = store.choiceOf(p)
+            val untouched = if (was == null) current == Catalogue.Choice.LEAVE else key(current) == was
+            if (untouched && current != choice) changes[p] = choice
         }
-        store.writeSet(Store.DEFAULTS_SEEN, seen + fresh)
+        if (changes.isNotEmpty()) {
+            store.applyChoices(changes, changes.keys.associateWith { cat.find(it)?.name ?: it }, "set by an app update ${Store.now()}")
+            store.log("app update changed ${changes.size} default(s): " +
+                changes.entries.joinToString { "${it.key} → ${key(it.value)}" })
+        }
+        store.writeSet(Store.DEFAULTS_SEEN, (seen.filterKeys { it !in record } + record).map { "${it.key}=${it.value}" }.toSet())
     }
 
     /** Stop the user force-stopping the app or clearing its data (which would wipe its records). */
@@ -350,7 +606,7 @@ class Enforcer(context: Context) {
         if (!isOwner()) return "The debloater isn't device owner."
         var undone = 0
         // Everything it recorded hiding, plus anything on the list that's hidden, in case a record was lost.
-        val toRestore = store.readSet(Store.MANAGED) + store.readList(Store.BLOCK)
+        val toRestore = store.readSet(Store.MANAGED) + store.readList(Store.BLOCK) + store.readList(Store.REMOVE)
         for (p in toRestore) {
             if (!hidden(p) && !suspended(p)) continue
             try {
@@ -365,9 +621,11 @@ class Enforcer(context: Context) {
         for (p in lockedPkgs) setPermissions(p, DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
         store.writeSet(Store.MANAGED, emptySet())
         store.writeSet(Store.LOCKED, emptySet())
+        store.writeSet(Store.WIPED, emptySet())
         if (Build.VERSION.SDK_INT >= 30) {
             try { dpm.setUserControlDisabledPackages(admin, emptyList()) } catch (e: Exception) { }
         }
+        hardening().releaseAll()
         Scheduler.cancelAll(ctx)
         dpm.clearDeviceOwnerApp(ctx.packageName)
         store.log("released device owner; restored $undone package(s)")

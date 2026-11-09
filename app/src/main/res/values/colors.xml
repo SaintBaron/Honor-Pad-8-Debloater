@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_bg">#FF1F3A5F</color>
+    <!-- Screen colours; the dark-mode versions are in values-night. -->
+    <color name="window_bg">#FFF3F5F8</color>
+    <color name="accent">#FF2563EB</color>
 </resources>

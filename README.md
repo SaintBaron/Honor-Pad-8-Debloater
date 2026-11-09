@@ -23,13 +23,14 @@ everything it needs, talks you through each step, checks each one worked, and la
 4. [Before you start](#before-you-start)
 5. [Setting it up with the setup tool](#setting-it-up-with-the-setup-tool)
 6. [Using the app](#using-the-app)
-7. [The lists](#the-lists)
-8. [Updating, and removing it](#updating-and-removing-it)
-9. [Security and privacy](#security-and-privacy)
-10. [Setting it up by hand (advanced)](#setting-it-up-by-hand-advanced)
-11. [Building it yourself](#building-it-yourself)
-12. [Troubleshooting](#troubleshooting)
-13. [Project layout](#project-layout)
+7. [Scanning the tablet for anything else](#scanning-the-tablet-for-anything-else)
+8. [The lists](#the-lists)
+9. [Updating, and removing it](#updating-and-removing-it)
+10. [Security and privacy](#security-and-privacy)
+11. [Setting it up by hand (advanced)](#setting-it-up-by-hand-advanced)
+12. [Building it yourself](#building-it-yourself)
+13. [Troubleshooting](#troubleshooting)
+14. [Project layout](#project-layout)
 
 ---
 
@@ -56,23 +57,29 @@ This app fixes all three.
 Android has a role called **device owner**. Only one app can hold it, and Android only allows it to be set
 while the device has **no accounts** signed in (you remove them for a minute during setup, then sign back in). The
 device-owner app gets a
-set of extra powers through Android's official `DevicePolicyManager` API. This app uses four of them:
+set of extra powers through Android's official `DevicePolicyManager` API. This app uses these:
 
 | Power | What it does | Used for |
 |---|---|---|
-| **Hide app** | The app disappears completely: no icon, can't run, can't be found by other apps. Its files stay on the system partition, so it can come back. **Only the device owner can un-hide it.** | Everything on the *Keep hidden* list |
+| **Hide app** | The app disappears completely: no icon, can't run, can't be found by other apps. Its files stay on the system partition, so it can come back. **Only the device owner can un-hide it.** | Every app set to **Hide** or **Remove** |
+| **Wipe app data** | Clears everything the app has stored, as *Clear storage* in Settings would. | Apps set to **Remove** |
+| **Uninstall silently** | Strips the Play Store updates from a system app (back to the small factory copy), or uninstalls an app you installed yourself, with no prompt. | Apps set to **Remove** |
+| **Reinstall a system app** | Brings back a system app that was removed for your user (for example with `adb shell pm uninstall --user 0`). | Setting such an app back to **Leave** |
 | **Suspend app** | The app stays visible but greyed out and can't open or run. | Listed apps the system refuses to hide |
-| **Lock a permission** | Sets a runtime permission (location, camera, contacts, storage, phone…) to *denied* so neither the app nor you can turn it back on. | The *Lock permissions off* list (HONOR ID by default), and anything that can't be hidden *or* suspended |
+| **Lock a permission** | Sets a runtime permission (location, camera, contacts, storage, phone…) to *denied* so neither the app nor you can turn it back on. | The *permission locks* (HONOR ID by default), and anything that can't be hidden *or* suspended |
 | **Block force-stop / clear data** | Stops this app being force-stopped or having its data wiped from Settings, which would erase its records. | This app itself (Android 11+) |
 
-Hiding is stronger than `pm uninstall --user 0`. An uninstalled-for-user app can be reinstalled by the system
-or by any installer. A hidden app can only be brought back by the device owner, which is this app.
+**Remove** is as close to uninstalling as Android allows without root. Hiding is stronger than
+`pm uninstall --user 0`: an uninstalled-for-user app can be reinstalled by the system or by any installer, but a hidden
+app can only be brought back by the device owner, which is this app. Remove adds what `pm uninstall` does on top: the
+app's data is wiped and its updates are stripped, which frees the same space. The factory copy on the system partition
+always stays (only root could delete it), which is also what lets **Leave** bring an app back.
 
 ### When it runs
 
 - **At every boot**, and again **5 minutes after boot** to catch anything that installs late.
 - **Every 6 hours**, using Android's job scheduler.
-- **Straight after setup**, and whenever you tap **Enforce now**.
+- **Straight after setup**, whenever you change an app's setting, and whenever you tap **Check now**.
 
 Each run is *idempotent*: running it twice changes nothing the second time. A run:
 
@@ -81,11 +88,11 @@ Each run is *idempotent*: running it twice changes nothing the second time. A ru
    are left alone, but if an update brings one back, it gets hidden.
 3. If an app **can't be hidden**, suspends it instead. If it can't be suspended either, it's reported as failed and
    its permissions are locked off.
-4. Locks the runtime permissions off for everything on the **Lock permissions off** list.
+4. Locks the runtime permissions off for everything with a **permission lock**.
 5. Compares every package on the tablet against what it has seen before. Any **new system app**, or any app
-   installed by HONOR's own installers, is written to the *New packages* list and you get a notification. **It
-   doesn't remove new packages automatically**, because a new system package could be something the system needs.
-   You decide, and add it to the list if you want it gone. Apps you install yourself are ignored.
+   installed by HONOR's own installers, shows up under *New since setup* in the app and you get a notification. **It
+   doesn't hide new packages automatically**, because a new system package could be something the system needs.
+   You decide with one tap: **Hide** or **Keep**. Apps you install yourself are ignored.
 
 ### Safety rails
 
@@ -105,10 +112,11 @@ Some packages are **never** hidden, whatever the list says:
   Hidden apps take no RAM or CPU and can't run.
 - **HONOR ID isn't hidden by default.** HONOR blocks uninstalling, disabling and suspending it with adb, and hiding it
   hasn't been tested, so by default the app locks all of its runtime permissions off instead. You can try adding
-  `com.hihonor.id` to *Keep hidden*: if HONOR refuses, the app reports it once and keeps its permissions locked. Pair this with
+  `com.hihonor.id` to the hide list: if HONOR refuses, the app reports it once and keeps its permissions locked. Pair this with
   not signing in to an HONOR ID, and with a firewall such as RethinkDNS to block its network access.
-- **It doesn't block network traffic.** It has no internet permission at all, so it can't act as a firewall. Use
-  Private DNS or RethinkDNS alongside it for that.
+- **It isn't a firewall itself.** It can lock tracker-blocking Private DNS on, and lock a firewall app such as
+  RethinkDNS always on (see [Privacy and security settings](#privacy-and-security-settings)); the per-app blocking is
+  that app's job.
 - **It survives updates, not factory resets.** A factory reset removes the app and its device-owner role. Set it up again
   afterwards the same way.
 - **Android shows the tablet as "managed".** You'll see a line such as *"This device is managed by your organisation"* in
@@ -163,63 +171,186 @@ something goes wrong. **Show details** at the bottom shows exactly what it's doi
 | 6. Install the app | Installs it, or updates the copy that's already there. **Watch the tablet**: HONOR asks you to confirm apps installed over USB. |
 | 7. Remove accounts | Shows which accounts are still signed in (only their type, such as "Google account", never the address) and updates by itself as you remove them. Skipped if the app is already set up. |
 | 8. Make it device owner | Runs the one command that gives the app its powers. Skipped if it's already set up. |
-| 9. Finish on the tablet | Sign back in; open the app and tap **Snapshot removed apps**, then **Enforce now**; allow it in HONOR's battery settings. Each has a button that opens the right screen on the tablet. |
+| 9. Finish on the tablet | Sign back in; open the app and check it says **Protection is on**; allow it in HONOR's battery settings. Each has a button that opens the right screen on the tablet. |
 
 That's it. The app now looks after itself. You can turn USB debugging off again.
 
 ## Using the app
 
-From top to bottom, the screen has:
+The app follows the tablet's light or dark mode. From top to bottom:
 
-- **Status.** Whether it's device owner, and how many packages it's enforcing.
-- **Keep hidden.** The list of packages to hide, one per line. `#` starts a comment. Edit freely.
-- **Lock permissions off.** Packages whose runtime permissions are locked to *denied*.
-- **Save.** Saves both lists. Changes take effect at the next run; tap **Enforce now** to apply them immediately.
-- **Enforce now.** Saves, then runs straight away. A message summarises what changed.
-- **Snapshot removed apps.** Adds every package that's currently removed or hidden to *Keep hidden*. Use it after
-  removing things with adb. Added lines are grouped under a dated `# added by snapshot` comment so you can review them.
-- **Clear new-package list.** Empties the *New packages* list once you've reviewed it.
-- **New packages since setup.** System apps that appeared after setup. These usually arrive with system updates.
-  Look each one up; if you want it gone, add it to *Keep hidden*.
-- **Log.** Everything it has done, newest first.
-- **Release device owner.** Undoes everything and gives up the role (see [Removing it](#removing-it)).
+- **Status card.** *Protection is on* (green) once it's device owner, with how many apps are hidden, how many permission
+  locks are on, and when it last checked. **Check now** runs a check straight away. If it says *Not set up yet*, run
+  the setup tool.
+- **New since setup.** Only shown when something new turns up: a system app, or one HONOR's own store installed, that
+  wasn't there at setup. Tap **Hide** or **Keep** for each.
+- **Search apps.** Type part of a name or package to jump to it.
+- **App groups.** Every app and service the project knows about, in groups (*Preinstalled extras*, *HONOR background
+  services*, *HONOR apps*, *HONOR Connect and sharing*, *Google apps*, *Permission locks*). Tap a group to open it.
+  Each app has a name, a one-line description, its package name, a label showing its state, and a
+  **Leave / Hide / Remove** choice:
+  - **Leave**: the debloater doesn't touch it. Choosing Leave for a hidden or removed app brings it back straight
+    away, including apps you removed with adb before setup (the debloater reinstalls them from the system partition).
+  - **Hide**: hidden now, and again whenever an update brings it back. Its data is kept, so Leave restores it exactly
+    as it was.
+  - **Remove**: hidden, its data wiped, and its Play Store updates stripped. For an app you installed yourself, it's
+    uninstalled. If an update brings it back, it's removed again. Leave brings it back fresh, signed out and without
+    its old data.
+  - In *Permission locks* the choice is **Leave / Lock**: Lock turns the app's permissions off instead of hiding it.
 
-**To bring an app back**, delete its line from *Keep hidden* and tap **Enforce now**.
+  The labels mean:
 
-**Finding package names:** the log and the *New packages* list show them. On a PC, `adb shell pm list packages`
-lists everything. App-info sites and the [Universal Android Debloater](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation)
-lists explain what most packages do.
+  | Label | Meaning |
+  |---|---|
+  | **Removed** | Removed by the debloater (or set to Remove after you removed it with adb) |
+  | **Hidden** | Hidden by the debloater, data kept |
+  | **Removed earlier** | Removed for your user before setup (usually with adb) |
+  | **Paused** | The system wouldn't hide it, so it's suspended: greyed out and can't run |
+  | **Couldn't hide** | The system refused both; its permissions are locked off instead |
+  | **Visible** | Set to Hide or Remove but not done yet (the debloater isn't set up) |
+  | **Still hidden** / **Still paused** | Set to Leave but still hidden; tap **Bring it back** |
+  | **Not on this tablet** | Doesn't exist on this firmware; it'll be dealt with if an update ever adds it |
+  | **Locked** / **Not locked yet** | For permission locks |
+
+  The defaults are aggressive (see [The lists](#the-lists)). Apps whose descriptions say to install a replacement
+  first, or to test something afterwards, mean it.
+- **Your additions.** Hide, remove or lock any other app by typing its package name. Anything you've added shows here
+  with its own choice.
+- **Apps.** Install F-Droid and Lawnchair, and keep Lawnchair updated (see [Apps](#apps)).
+- **Privacy and security.** Extra settings only a device owner can apply (see
+  [Privacy and security settings](#privacy-and-security-settings)).
+- **Advanced** (closed until you open it):
+  - **Lists as text.** The remove list, the hide list and the lock list as plain text, one package per line, `#` for
+    comments. This is exactly what the choices edit. **Save and apply** saves and runs a check; **Undo edits** throws
+    your changes away. While you have unsaved edits here, the choices wait.
+  - **Apps removed earlier → Add them to the list.** Adds every app that's already removed or hidden to the hide list,
+    so it stays gone after updates. Handy if you removed extra apps with adb before setting this up.
+  - **Log.** Everything it has done, newest first.
+  - **Release device owner.** Undoes everything and gives up the role (see [Removing it](#removing-it)).
+
+**To bring an app back**, find it and choose **Leave**.
+
+### Apps
+
+- **F-Droid.** **Install F-Droid** downloads it from f-droid.org and installs it without a prompt, once it's checked.
+  F-Droid keeps itself and the apps you get from it up to date.
+- **Lawnchair.** **Install Lawnchair** gets the newest release from Lawnchair's GitHub page (they're all marked beta;
+  nightly test builds are skipped). **Make it the home screen** locks the home button to Lawnchair, so HONOR can't switch it
+  back; **Stop locking the home screen** undoes it. **Update it automatically** (on by default) checks once a day.
+
+See [Installing apps safely](#installing-apps-safely) for what's checked before anything is installed.
+
+### Privacy and security settings
+
+Each is an **Off / On** choice in the **Privacy and security** card. The first four are on by default.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Turn off cloud backup | **On** | Stops Android backing up app data to Google. |
+| Block screen-reading AI features | **On** | Stops the system capturing what's on screen for content capture and "smart" suggestions. |
+| Block adding users and guests | **On** | No new users, guest mode or app-twin style profiles. |
+| Approve keyboards and accessibility apps | **On** | Only the system's own keyboards and accessibility services, plus ones you allow, can be used: the two ways an app could read everything you type or see. Whatever you're using when it's first turned on is allowed automatically. To use a new keyboard (HeliBoard, say), choose **Allow** for it in the card first, then switch to it in Settings. One that's switched on stays allowed until you turn it off in Settings. |
+| Hide notification text on the lock screen | Off | Shows that something arrived, not what it says, until you unlock. Needs a PIN, pattern or password. |
+| Block USB debugging | Off | Turns adb off and stops it being turned on. Switch it off again before running the setup tool or the scan script. |
+| Tracker-blocking Private DNS | Off | Off, **AdGuard** (`dns.adguard-dns.com`: ads, trackers and malware), **Quad9** (`dns.quad9.net`: malware only) or your own resolver. DNS lookups are encrypted and known tracking domains, HONOR's included, don't resolve. The setting is locked so nothing else can change it. If the service is ever down, websites won't load until you switch this off. |
+| Lock a VPN or firewall always on | Off | Pick an installed VPN or firewall app (for example RethinkDNS from F-Droid). It's kept running, and nothing can go online outside it, so its per-app blocking can't be bypassed. If that app stops working, nothing gets online until you release it in the card. |
+
+**Release device owner** turns all of these back off.
+
+What else other tools do, and why it isn't here:
+
+- **Blocking tracker components inside apps** (App Manager, Blocker) needs root or adb-level access that a device owner
+  doesn't have. Hiding the whole app, or locking its permissions, is what's possible here.
+- **A separate work profile for untrusted apps** (Shelter, Insular) can't be created while a device owner is set; Android
+  blocks it.
+- **Universal Android Debloater, Canta and Hail** remove, disable or hide apps. This project's catalogue and Leave / Hide /
+  Remove choices cover the same ground for this tablet, and keep doing it after updates.
+
+## Scanning the tablet for anything else
+
+`tool/scan_tablet.py` lists every package on the tablet and everything running on it right now, so you can mop up
+anything the default list doesn't cover. It only reads (it runs `ps`, `dumpsys`, `pm list` and `getprop` over adb)
+and changes nothing. It needs Python 3.8+ and adb; if you've run the setup tool, it uses the same adb.
+
+Plug the tablet in with USB debugging on, then from the project folder:
+
+```sh
+python3 tool/scan_tablet.py
+```
+
+It prints a summary and writes a full report (`honorpad8-scan-<date>.md`) in the current folder:
+
+- **Worth a look.** Active HONOR, Huawei or Facebook packages that aren't hidden or removed by default, plus anything
+  left alone by default that's running. Running ones come first, with their processes, services and memory use. The report has a
+  paste-ready list.
+- **Hidden or removed by default, but still active.** Should be empty once the debloater is set up and has run.
+- **Running app processes and services**, every **native system process** (firmware programs no app can stop without
+  root; HONOR's are in bold), and **every package** sorted into groups (worth a look, hidden or removed by default,
+  left alone by default, permission-locked, best left alone, core, other system, yours), with each one's default.
+
+Apps you installed yourself are counted but not named, unless you add `--include-my-apps`. The report still lists
+every system package and process, so read it before posting it anywhere. Other options: `--out FILE`,
+`--serial SERIAL` (more than one device connected), and `--list` (only the package names worth a look, one per line).
+
+To get rid of something it finds, open the app, search for it (or type its package name under **Your additions**),
+and choose **Hide** or **Remove**. Look up anything you don't recognise first, and use the tablet for a day afterwards. Packages under
+*best left alone* are things like the camera, clock and lock-screen security that other features depend on.
 
 ## The lists
 
-### Keep hidden: defaults (`app/src/main/assets/blocklist.txt`)
+Every app the project knows about is in [`app/src/main/assets/catalogue.txt`](app/src/main/assets/catalogue.txt), with
+its name, description, group and default (`remove`, `hide` or `leave`). The app builds its choices from it, a new
+install starts with those defaults, and the scan script uses it to describe what it finds. To suggest an app, add a
+line there.
 
-| Group | Examples | Why |
+When an app update changes a default (a new app to remove, or one moved from hide to remove), your tablet picks it up
+at the next check, but only for apps you haven't changed yourself. Anything you set by hand stays as you set it.
+
+### Removed by default
+
+| Group | Apps | Why |
 |---|---|---|
-| Third-party preloads | Facebook (`com.facebook.katana`) and its background services and updater (`com.facebook.appmanager`, `.services`, `.system`), Booking.com (`com.booking`), WPS Office (`cn.wps.moffice_eng`) | Apps and background services you never chose to install |
-| HONOR telemetry and cloud | `pushagent`, `hiviewtunnel` (diagnostic upload), `systemappsupdater`, `autoinstallapkfrommcc` (installs region bloat by SIM/country code) | Phone-home and silent installs |
-| HONOR apps | Tips, Weather, Email, Notepad, Recorder, Video editor, Backup, Clone, HiSuite helper, My HONOR, Lens… | Bundled apps with better alternatives |
-| HONOR multi-device | Honor Share, Connect control centre | Only useful with other HONOR devices |
-| Extra picks | Gmail, Drive, Meet, YouTube Music, Google TV, HONOR Themes, Files, Calendar, Calculator, Contacts, Search | Personal choice: delete these lines if you use them |
+| Preinstalled extras | Facebook and its background services and updater, Booking.com, WPS Office, Netflix (and its preload activator), SwiftKey (once you've switched to another keyboard) | Apps and background services you never chose to install |
+| HONOR background services | Push, diagnostics upload, log collector, regional auto-installer, app updater, Magazine Unlock, browser homepage, Caller ID, carrier location, language downloader, print plug-in, factory test, engineering menu, Smart Diagnosis, PC Suite connector, Search service, context awareness, AI engine, HONOR location, Trusted circle | Phone-home, tracking and silent installs |
+| HONOR apps | My HONOR, Tips, Weather, AI Lens, Backup, Device Clone, Email, Recorder, Video Editor, Notepad, Themes, Files, Calendar, Calculator, Contacts, Search, gesture and scrolling screenshots, screen recorder, YOYO suggestions, setup guide | Bundled apps with better alternatives |
+| HONOR Connect and sharing | All of it, including screen mirroring and Projection | Only useful with other HONOR devices |
+| Google apps | Meet, Gmail, YouTube Music, Drive, Google TV, Maps, the Google app (search, Assistant, Discover), Digital Wellbeing, Google Feedback, Timeline | Personal choice: choose Leave for any you use |
+| Google setup and telemetry | Mainline telemetry | Reporting only |
+| Android extras | Bookmark provider, live-wallpaper picker | Unused |
+
+### Hidden by default (data kept)
+
+Google's setup leftovers: Setup Wizard, Partner Setup, Restore, the search-engine chooser and the one-time initialiser.
+
+### In the app, left alone by default
+
+HONOR Gallery, side dock, floating windows; Chrome, YouTube, Google Photos, Speech Services, the Accessibility Suite;
+the print spooler and print-service finder; the basic screensaver, Dynamic System Updates; and the mobile-network
+parts a Wi-Fi tablet doesn't use (in-call screen, MMS service, opportunistic network service, emergency alerts).
 
 Some side effects to be aware of:
 
-- **Hiding HONOR Search** (`com.hihonor.search`, `com.hihonor.searchservice`) stops the home-screen search prompts,
-  but **the search bar in Settings may stop working**.
-- **Hiding HONOR Themes** may stop wallpaper changes from Settings. Set your wallpaper first, or use another wallpaper app.
-- **Hiding HONOR Files, Calendar, Calculator and Contacts** leaves you without those apps; install replacements first.
-  Fossify File Manager, Calendar, Calculator and Contacts are on F-Droid. Your events and contacts aren't deleted: they stay in
-  your Google account and in Android's own storage, which is never hidden.
+- **The Google app** provides the home-screen Google search bar, "Hey Google" and Discover. Choose Leave if you use them.
+- **HONOR Search** (`com.hihonor.search`, `com.hihonor.searchservice`) going stops the home-screen search prompts, but
+  **the search bar in Settings may stop working**.
+- **HONOR Themes** going may stop wallpaper changes from Settings. Set your wallpaper first, or use another wallpaper app.
+- **HONOR Files, Calendar, Calculator and Contacts**: install replacements first. Fossify File Manager, Calendar,
+  Calculator and Contacts are on F-Droid. Your events and contacts aren't deleted: they stay in your Google account and
+  in Android's own storage, which is never touched.
+- **Screen mirroring and Projection** are how the tablet mirrors its screen to a TV. Choose Leave if you do that.
+- **SwiftKey**: the keyboard you're using is never hidden. Install another first (HeliBoard on F-Droid has no internet
+  access), choose **Allow** for it under **Approve keyboards and accessibility apps**, then switch to it in Settings.
+- **HONOR location**: check a maps app still finds you afterwards. Google's location service takes over.
 
-### Lock permissions off: defaults (`app/src/main/assets/lockdown.txt`)
+### Permission-locked by default
 
 Just `com.hihonor.id` (HONOR ID), which HONOR won't let you uninstall or disable (see [What it can't do](#what-it-cant-do)).
 
 ### What not to add
 
 The safety rails above stop the worst mistakes, but use judgement: don't hide things you don't recognise without
-looking them up. Hiding a package the system depends on can break features. Undo it by deleting the line and tapping
-**Enforce now**. If the tablet becomes unusable, see [Troubleshooting](#troubleshooting).
+looking them up. Hiding a package the system depends on can break features. Undo it by choosing Leave. If the tablet
+becomes unusable, see [Troubleshooting](#troubleshooting).
 
 ## Updating, and removing it
 
@@ -232,7 +363,7 @@ tablet. Updates keep your lists and settings, and you **don't** need to remove y
    verifies the newest version, installs it, and skips everything else. It also tells you if there's a newer version of
    the tool itself.
 2. **On the tablet with Obtainium.** [Obtainium](https://github.com/ImranR98/Obtainium) is a free app that watches GitHub
-   releases and offers updates, so the debloater itself never needs internet access. Install Obtainium, tap **Add app**,
+   releases and offers updates. Install Obtainium, tap **Add app**,
    paste this repository's address, and it will notify you of new versions. Each update asks you to confirm it.
 3. **By hand:**
    ```sh
@@ -242,14 +373,15 @@ tablet. Updates keep your lists and settings, and you **don't** need to remove y
 
 Android only installs an update signed with the same key as the installed app, whichever way you choose.
 
-If an update adds new apps to the default *Keep hidden* list, they're added to your list automatically the first time the
-updated app runs, and noted in its log. Each default is only ever added once, so an app you deliberately removed from your
-list stays removed.
+If an update changes the defaults (a new app to remove, or one moved from Hide to Remove), the change is applied the
+first time the updated app runs, and noted in its log. Each change is only applied once, and never to an app you've
+set yourself, so your own choices stay. Wiping data takes a little time, so after an update, apps are hidden straight
+away and wiped by the check that runs about five minutes later.
 
 ### Removing it
 
-1. In the app, tap **Release device owner** and confirm. It un-hides everything it hid (including anything on the
-   list, in case its records were lost), lifts its permission locks, re-allows force-stop, cancels its schedule, and gives
+1. In the app, tap **Release device owner** and confirm. It un-hides everything it hid or removed (including anything on
+   the lists, in case its records were lost; removed apps come back without their old data), lifts its permission locks, re-allows force-stop, cancels its schedule, and gives
    up device owner.
 2. Uninstall it like any other app.
 
@@ -261,10 +393,32 @@ A factory reset also removes it completely.
 
 | | |
 |---|---|
-| **Internet** | **None.** There's no `INTERNET` permission, so it can't send anything anywhere, ever. |
-| **Permissions** | `RECEIVE_BOOT_COMPLETED` (run at boot), `POST_NOTIFICATIONS` (alerts), `QUERY_ALL_PACKAGES` (see which apps exist), `HIDE_OVERLAY_WINDOWS` (anti-tapjacking, below). |
+| **Internet** | **Only to download F-Droid and Lawnchair** (see [Installing apps safely](#installing-apps-safely)). HTTPS to five fixed hosts (`f-droid.org`, `api.github.com`, `github.com`, and GitHub's two download hosts), nothing else. It sends nothing about the tablet. |
+| **Permissions** | `RECEIVE_BOOT_COMPLETED` (run at boot), `POST_NOTIFICATIONS` (alerts), `QUERY_ALL_PACKAGES` (see which apps exist), `HIDE_OVERLAY_WINDOWS` (anti-tapjacking, below), `INTERNET` (the downloads above), `REQUEST_INSTALL_PACKAGES` and `REQUEST_DELETE_PACKAGES` (installing those apps, and stripping updates from apps set to Remove). |
 | **Data** | Only package names and its own log, in its private app storage, which no other app can read. No personal data is collected, stored or sent. Excluded from cloud backup and phone-to-phone transfer. |
-| **Code** | No third-party libraries in the app, no shell commands, no web views, no dynamic code loading. |
+| **Code** | No third-party libraries in the app, no shell commands, no web views, no dynamic code loading. All network code is in one small file, `Net.kt`. |
+
+### Installing apps safely
+
+The **Apps** card installs F-Droid and Lawnchair, and keeps Lawnchair up to date. Every download has to pass all of
+these before it's installed:
+
+- **Where it comes from.** HTTPS only, and only from `f-droid.org` (F-Droid) or Lawnchair's own GitHub releases. Each
+  redirect is checked against the same short list, and a download link that isn't inside Lawnchair's own releases is
+  refused. Plain HTTP, other hosts, other ports and certificates added to the tablet by a user or an app are all refused.
+- **What it is.** It must be the expected app (`org.fdroid.fdroid` or `app.lawnchair`), and not older than what's
+  installed: no downgrades.
+- **Who signed it.** Its signing key must match the one pinned in the app: F-Droid's published key
+  (`43238d51…c9ccab`, from [F-Droid's signing keys page](https://f-droid.org/docs/Release_Channels_and_Signing_Keys/)), and
+  the key Lawnchair signs its GitHub releases with (`747c3645…2e4dc5`, `CN=Lawnchair`; the same fingerprint APKMirror lists for
+  the Lawnchair team's apps). Lawnchair's download link must also point at exactly one file in Lawnchair's own releases. Android itself then refuses any update signed with
+  a different key from the installed app.
+- **Size and format.** Downloads are capped in size and saved only in the app's private storage, then deleted. Release
+  information is read with a strict parser that rejects anything malformed.
+
+Requests carry no cookies, IDs or tablet details, just a generic user agent. Lawnchair's automatic update checks once a
+day, only when there's a network, and only if Lawnchair is installed and **Update it automatically** is on. A release is
+only downloaded once; one that fails the checks isn't retried.
 
 ### How it's protected
 
@@ -360,8 +514,8 @@ The commands below work in bash, zsh and fish. On Windows, use PowerShell and ad
    ```
    You should see `Success: Device owner set`.
 7. **Sign back in** to your Google account and anything else in **Settings → Users & accounts**.
-8. **Open Honor Pad 8 Debloater** on the tablet. The top should say **Device owner: yes**. Tap **Snapshot removed apps**,
-   which adds anything you already removed with adb to its list, then **Enforce now**.
+8. **Open Honor Pad 8 Debloater** on the tablet. It should say **Protection is on**. If you removed extra apps with adb,
+   open **Advanced** and tap **Add them to the list**.
 9. **Let HONOR's battery manager allow it.** Go to **Settings → Battery → App launch → Honor Pad 8 Debloater**, turn off
    *Manage automatically*, and turn on **all three** switches (auto-launch, secondary launch, run in background).
    Without this, HONOR may stop it running at boot.
@@ -456,7 +610,7 @@ HONOR protects that app against both hiding and suspending. Its permissions are 
 access with a firewall such as RethinkDNS.
 
 **Something stopped working after I added an app to the list.**
-Delete that line from *Keep hidden* and tap **Enforce now**. The app comes straight back.
+Find it in the app and choose **Leave**. It comes straight back (if it was removed, without its old data).
 
 **The tablet won't start properly after hiding something.**
 Factory-reset it from recovery: switch it off, then hold **Power + Volume Up** until the recovery menu appears (the usual
@@ -496,14 +650,20 @@ bring those back with `adb shell cmd package install-existing <package>`, or by 
 ```
 .github/workflows/build.yml       CI: builds and signs the app, packages the tool per OS, publishes the release
 app/src/main/AndroidManifest.xml  permissions and components
-app/src/main/assets/              default lists (blocklist.txt, lockdown.txt)
+app/src/main/assets/catalogue.txt every known app: name, description, group, on or off by default
 app/src/main/java/app/honorpad8/debloater/
   Enforcer.kt                     the policy engine: hide, suspend, lock, restore, detect new packages
   Store.kt                        crash-safe storage for the lists, records and log
+  Catalogue.kt                    reads catalogue.txt; builds the default lists
   Receivers.kt                    device-admin receiver, boot receiver, scheduled job, notifications
-  MainActivity.kt                 the app's screen
-app/src/main/res/                 icon, device-admin policy, backup exclusion rules
+  Hardening.kt                    privacy and security settings (backup, AI capture, users, keyboards, DNS, VPN)
+  Installer.kt                    downloads, checks and installs F-Droid and Lawnchair
+  Net.kt                          the only network code: HTTPS GETs to a fixed list of hosts
+  MiniJson.kt                     a small strict JSON reader for the release feeds
+  MainActivity.kt, Ui.kt          the app's screen and its look
+app/src/main/res/                 icon, device-admin policy, backup exclusion rules, HTTPS-only network config
 tool/debloater_setup.py           the setup and update tool (Python, standard library only)
+tool/scan_tablet.py               read-only scan of everything installed and running on the tablet
 tool/trusted_signer.sha256        fingerprint of the official signing key the tool checks downloads against
 tool/requirements-build.txt       exact, hash-pinned packages used to package the tool (not needed to run it)
 ```

@@ -41,6 +41,33 @@ APK_ASSET = "honor-pad-8-debloater.apk"
 USER_AGENT = "HonorPad8Debloater-Setup"
 MIN_SDK = 29  # Android 10
 
+# Colours for the setup window.
+C_BG = "#eef1f5"            # window margins
+C_CARD = "#ffffff"          # the page
+C_TEXT = "#1b1d21"
+C_MUTED = "#5f6670"
+C_LINE = "#e3e7ed"
+C_FIELD = "#f5f7fa"
+C_TRACK = "#e5e9f0"
+C_ACCENT = "#2563eb"
+C_ACCENT_HOVER = "#1d4ed8"
+C_ACCENT_DARK = "#1e40af"
+C_ACCENT_DISABLED = "#a9bcf0"
+C_SOFT = "#e8eefc"          # secondary buttons
+C_SOFT_HOVER = "#dbe5fb"
+C_SOFT_PRESSED = "#c9d7f8"
+C_DISABLED_BG = "#f1f3f6"
+C_DISABLED_FG = "#9aa3b2"
+C_GOOD = "#15803d"
+C_BAD = "#b91c1c"
+C_WARN = "#b45309"
+C_SIDE = "#111827"
+C_SIDE_NOW = "#1f2a44"
+C_SIDE_TEXT = "#9aa5b8"
+C_SIDE_DONE = "#5fd39a"
+C_LOG_BG = "#0f1115"
+C_LOG_TEXT = "#d6dde6"
+
 IS_WINDOWS = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
 IS_LINUX = sys.platform.startswith("linux")
@@ -844,60 +871,115 @@ def main() -> None:
             self.page_gen = 0   # bumped every time a page is shown
 
             root.title(f"{APP_NAME} setup")
-            root.minsize(940, 640)
-            root.geometry("1000x700")
+            root.minsize(960, 660)
+            root.geometry("1040x720")
+            root.configure(background=C_BG)
             style = ttk.Style()
-            if IS_LINUX and "clam" in style.theme_names():
+            # "clam" is the one built-in theme that takes custom colours on every system.
+            if "clam" in style.theme_names():
                 style.theme_use("clam")
             base = tkfont.nametofont("TkDefaultFont")
-            size = base.cget("size") or 10
-            self.f_title = base.copy(); self.f_title.configure(size=abs(size) + 7, weight="bold")
-            self.f_head = base.copy(); self.f_head.configure(size=abs(size) + 2, weight="bold")
-            self.f_big = base.copy(); self.f_big.configure(size=abs(size) + 3, weight="bold")
+            if IS_LINUX:
+                families = set(tkfont.families())
+                for fam in ("Inter", "Cantarell", "Noto Sans", "Ubuntu", "Roboto", "DejaVu Sans"):
+                    if fam in families:
+                        for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont"):
+                            tkfont.nametofont(name).configure(family=fam)
+                        break
+            size = abs(base.cget("size") or 10)
+            base.configure(size=size + 1)
+            size += 1
+            self.f_title = base.copy(); self.f_title.configure(size=size + 9, weight="bold")
+            self.f_head = base.copy(); self.f_head.configure(size=size + 1, weight="bold")
+            self.f_big = base.copy(); self.f_big.configure(size=size + 2, weight="bold")
+            self.f_small = base.copy(); self.f_small.configure(size=max(8, size - 2), weight="bold")
             self.f_mono = tkfont.nametofont("TkFixedFont")
-            style.configure("Side.TFrame", background="#1f3a5f")
-            style.configure("Side.TLabel", background="#1f3a5f", foreground="#c9d6e8")
-            style.configure("SideNow.TLabel", background="#1f3a5f", foreground="#ffffff", font=self.f_head)
-            style.configure("SideDone.TLabel", background="#1f3a5f", foreground="#8fd18f")
-            style.configure("SideTitle.TLabel", background="#1f3a5f", foreground="#ffffff", font=self.f_big)
-            style.configure("Good.TLabel", foreground="#1e7b34")
-            style.configure("Bad.TLabel", foreground="#b3261e")
-            style.configure("Warn.TLabel", foreground="#8a5a00")
-            style.configure("Accent.TButton", font=self.f_head)
 
-            # Layout: sidebar | content
-            outer = ttk.Frame(root)
+            # Everything sits on a white card by default; the sidebar and margins have their own styles.
+            style.configure(".", background=C_CARD, foreground=C_TEXT, bordercolor=C_LINE,
+                            lightcolor=C_CARD, darkcolor=C_CARD, troughcolor=C_TRACK,
+                            focuscolor=C_ACCENT, selectbackground=C_ACCENT, selectforeground="#ffffff")
+            style.configure("TFrame", background=C_CARD)
+            style.configure("Outer.TFrame", background=C_BG)
+            style.configure("Line.TFrame", background=C_LINE)
+            style.configure("TLabel", background=C_CARD, foreground=C_TEXT)
+            style.configure("Muted.TLabel", foreground=C_MUTED)
+            style.configure("Step.TLabel", foreground=C_ACCENT, font=self.f_small)
+            style.configure("Good.TLabel", foreground=C_GOOD)
+            style.configure("Bad.TLabel", foreground=C_BAD)
+            style.configure("Warn.TLabel", foreground=C_WARN)
+
+            style.configure("TButton", background=C_SOFT, foreground=C_ACCENT_DARK, borderwidth=0,
+                            focusthickness=0, padding=(16, 9), relief="flat", font=self.f_head)
+            style.map("TButton",
+                      background=[("disabled", C_DISABLED_BG), ("pressed", C_SOFT_PRESSED), ("active", C_SOFT_HOVER)],
+                      foreground=[("disabled", C_DISABLED_FG)])
+            style.configure("Accent.TButton", background=C_ACCENT, foreground="#ffffff")
+            style.map("Accent.TButton",
+                      background=[("disabled", C_ACCENT_DISABLED), ("pressed", C_ACCENT_DARK), ("active", C_ACCENT_HOVER)],
+                      foreground=[("disabled", "#ffffff")])
+            style.configure("Quiet.TButton", background=C_CARD, foreground=C_MUTED, padding=(10, 9))
+            style.map("Quiet.TButton", background=[("active", C_BG), ("pressed", C_LINE)],
+                      foreground=[("disabled", C_DISABLED_FG)])
+
+            style.configure("TCheckbutton", background=C_CARD, foreground=C_TEXT, indicatorcolor=C_FIELD,
+                            indicatorbackground=C_FIELD, indicatorforeground="#ffffff", indicatorsize=16,
+                            upperbordercolor=C_MUTED, lowerbordercolor=C_MUTED, indicatormargin=(0, 0, 10, 0),
+                            padding=(0, 6))
+            style.map("TCheckbutton", background=[("active", C_CARD)],
+                      indicatorcolor=[("selected", C_ACCENT), ("pressed", C_SOFT)])
+            style.configure("TEntry", fieldbackground=C_FIELD, bordercolor=C_LINE, lightcolor=C_FIELD,
+                            darkcolor=C_FIELD, padding=(8, 6))
+            style.configure("Horizontal.TProgressbar", background=C_ACCENT, troughcolor=C_TRACK,
+                            bordercolor=C_TRACK, lightcolor=C_ACCENT, darkcolor=C_ACCENT, thickness=10)
+            style.configure("Vertical.TScrollbar", background=C_LOG_BG, troughcolor=C_LOG_BG,
+                            bordercolor=C_LOG_BG, arrowcolor=C_MUTED, lightcolor=C_LOG_BG, darkcolor=C_LOG_BG)
+
+            style.configure("Side.TFrame", background=C_SIDE)
+            style.configure("SideNow.TFrame", background=C_SIDE_NOW)
+            style.configure("Side.TLabel", background=C_SIDE, foreground=C_SIDE_TEXT)
+            style.configure("SideNow.TLabel", background=C_SIDE_NOW, foreground="#ffffff", font=self.f_head)
+            style.configure("SideDone.TLabel", background=C_SIDE, foreground=C_SIDE_DONE)
+            style.configure("SideTitle.TLabel", background=C_SIDE, foreground="#ffffff", font=self.f_big)
+
+            # Layout: sidebar | margin | white card (title, page, buttons)
+            outer = ttk.Frame(root, style="Outer.TFrame")
             outer.pack(fill="both", expand=True)
-            side = ttk.Frame(outer, style="Side.TFrame", width=240)
+            side = ttk.Frame(outer, style="Side.TFrame", width=250)
             side.pack(side="left", fill="y")
             side.pack_propagate(False)
-            ttk.Label(side, text=APP_NAME, style="SideTitle.TLabel", wraplength=210).pack(anchor="w", padx=16, pady=(18, 4))
-            ttk.Label(side, text="Setup and updates", style="Side.TLabel").pack(anchor="w", padx=16, pady=(0, 18))
+            ttk.Label(side, text=APP_NAME, style="SideTitle.TLabel", wraplength=210).pack(anchor="w", padx=20, pady=(24, 2))
+            ttk.Label(side, text="Setup and updates", style="Side.TLabel").pack(anchor="w", padx=20, pady=(0, 22))
 
-            main_area = ttk.Frame(outer, padding=(26, 20, 26, 12))
-            main_area.pack(side="left", fill="both", expand=True)
+            card = ttk.Frame(outer, padding=(30, 24, 30, 18))
+            card.pack(side="left", fill="both", expand=True, padx=18, pady=18)
+            main_area = card
+            self.step_var = tk.StringVar()
+            ttk.Label(main_area, textvariable=self.step_var, style="Step.TLabel").pack(anchor="w")
             self.title_var = tk.StringVar()
-            ttk.Label(main_area, textvariable=self.title_var, font=self.f_title).pack(anchor="w")
+            ttk.Label(main_area, textvariable=self.title_var, font=self.f_title).pack(anchor="w", pady=(2, 0))
 
             nav = ttk.Frame(main_area)
             nav.pack(fill="x", side="bottom")
+            ttk.Frame(main_area, style="Line.TFrame", height=1).pack(fill="x", side="bottom", pady=(8, 14))
             self.body = ttk.Frame(main_area)
-            self.body.pack(fill="both", expand=True, pady=(12, 8))
+            self.body.pack(fill="both", expand=True, pady=(14, 8))
             self.wrap_offsets = {}
             self.body.bind("<Configure>", lambda e: self.rewrap())
 
             self.progress = ttk.Progressbar(main_area, mode="determinate", maximum=100)
-            self.progress_label = ttk.Label(main_area, text="")
-            self.back_btn = ttk.Button(nav, text="< Back", command=self.go_back)
+            self.progress_label = ttk.Label(main_area, text="", style="Muted.TLabel")
+            self.back_btn = ttk.Button(nav, text="Back", style="Quiet.TButton", command=self.go_back)
             self.back_btn.pack(side="left")
-            self.next_btn = ttk.Button(nav, text="Next >", style="Accent.TButton", command=self.go_next)
+            self.next_btn = ttk.Button(nav, text="Next", style="Accent.TButton", command=self.go_next)
             self.next_btn.pack(side="right")
-            self.log_btn = ttk.Button(nav, text="Show details", command=self.toggle_log)
-            self.log_btn.pack(side="left", padx=10)
+            self.log_btn = ttk.Button(nav, text="Show details", style="Quiet.TButton", command=self.toggle_log)
+            self.log_btn.pack(side="left", padx=6)
 
             self.log_frame = ttk.Frame(main_area)
             self.log_text = tk.Text(self.log_frame, height=9, font=self.f_mono, wrap="word", state="disabled",
-                                    background="#111418", foreground="#d6dde6", relief="flat")
+                                    background=C_LOG_BG, foreground=C_LOG_TEXT, relief="flat", borderwidth=0,
+                                    highlightthickness=0, padx=12, pady=10, insertbackground=C_LOG_TEXT)
             sb = ttk.Scrollbar(self.log_frame, command=self.log_text.yview)
             self.log_text.configure(yscrollcommand=sb.set)
             self.log_text.pack(side="left", fill="both", expand=True)
@@ -918,14 +1000,14 @@ def main() -> None:
             ]
             self.side_labels = []
             for i, (name, _) in enumerate(self.steps):
-                row = ttk.Frame(side, style="Side.TFrame")
-                row.pack(anchor="w", fill="x", padx=12, pady=5)
-                mark = ttk.Label(row, text="", style="Side.TLabel", width=2, anchor="center")
+                row = ttk.Frame(side, style="Side.TFrame", padding=(8, 7))
+                row.pack(anchor="w", fill="x", padx=12, pady=1)
+                mark = ttk.Label(row, text="", style="Side.TLabel", width=3, anchor="center")
                 mark.pack(side="left")
-                lbl = ttk.Label(row, text=f"{i + 1}.  {name}", style="Side.TLabel")
-                lbl.pack(side="left")
-                self.side_labels.append((mark, lbl))
-            ttk.Label(side, text=f"Tool version {tool_version}", style="Side.TLabel").pack(side="bottom", anchor="w", padx=16, pady=12)
+                lbl = ttk.Label(row, text=name, style="Side.TLabel")
+                lbl.pack(side="left", padx=(4, 0))
+                self.side_labels.append((row, mark, lbl))
+            ttk.Label(side, text=f"Tool version {tool_version}", style="Side.TLabel").pack(side="bottom", anchor="w", padx=20, pady=16)
 
             self.done = [False] * len(self.steps)
             self.index = 0
@@ -1075,14 +1157,16 @@ def main() -> None:
             for w in self.body.winfo_children():
                 w.destroy()
             self.wrap_offsets.clear()
-            for j, (mark, lbl) in enumerate(self.side_labels):
-                symbol = "▶" if j == i else ("✓" if self.done[j] else "")
+            for j, (row, mark, lbl) in enumerate(self.side_labels):
+                symbol = "✓" if self.done[j] and j != i else str(j + 1)
                 style = "SideNow.TLabel" if j == i else ("SideDone.TLabel" if self.done[j] else "Side.TLabel")
+                row.configure(style="SideNow.TFrame" if j == i else "Side.TFrame")
                 mark.configure(text=symbol, style=style)
                 lbl.configure(style=style)
+            self.step_var.set(f"STEP {i + 1} OF {len(self.steps)}")
             self.title_var.set(self.steps[i][0])
             self.back_btn.configure(state="normal" if i > 0 else "disabled")
-            self.next_btn.configure(text="Close" if i == len(self.steps) - 1 else "Next >")
+            self.next_btn.configure(text="Close" if i == len(self.steps) - 1 else "Next")
             self.allow_next(False)
             self.steps[i][1]()
 
@@ -1710,8 +1794,9 @@ def main() -> None:
             items = [
                 ("Sign back in to your Google account (and any others) in Settings > Users & accounts.",
                  "Open accounts", "am start -a android.settings.SYNC_SETTINGS"),
-                ("Open Honor Pad 8 Debloater. The top should say \"Device owner: yes\". Tap \"Snapshot removed apps\", "
-                 "then \"Enforce now\".", "Open the app", f"am start -n {PACKAGE}/.MainActivity"),
+                ("Open Honor Pad 8 Debloater. It should say \"Protection is on\". If you removed apps with adb "
+                 "before, open Advanced and tap \"Add them to the list\".", "Open the app",
+                 f"am start -n {PACKAGE}/.MainActivity"),
                 ("Let it run at boot: Settings > Battery > App launch > Honor Pad 8 Debloater. Turn off \"Manage "
                  "automatically\" and turn on all three switches.", "Open battery settings",
                  "am start -a android.intent.action.POWER_USAGE_SUMMARY"),
@@ -1720,11 +1805,11 @@ def main() -> None:
                 row = ttk.Frame(self.body)
                 row.pack(anchor="w", fill="x", pady=6)
                 ttk.Label(row, text=f"{i}.", width=3, font=self.f_head).pack(side="left", anchor="n")
+                if self.adb and self.adb.serial:   # packed first so the text wraps around it, never over it
+                    ttk.Button(row, text=label, command=tablet_cmd(cmd)).pack(side="right", padx=(16, 0))
                 lbl = ttk.Label(row, text=text, justify="left")
-                lbl.pack(side="left", anchor="w")
-                self.wrap(lbl, 230)
-                if self.adb and self.adb.serial:
-                    ttk.Button(row, text=label, command=tablet_cmd(cmd)).pack(side="right", padx=(10, 0))
+                lbl.pack(side="left", anchor="w", fill="x", expand=True)
+                self.wrap(lbl, 300)
             self.para("")
             self.para("That's it. The app now runs by itself at every boot and every 6 hours, and keeps HONOR's apps "
                       "hidden through system updates. You can turn USB debugging off again.")

@@ -40,7 +40,8 @@ class BootReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                Enforcer(context).enforce(trigger)
+                // No wiping here: a boot broadcast only has a few seconds. The run 5 minutes later wipes.
+                Enforcer(context).enforce(trigger, wipe = false)
             } catch (e: Exception) {
                 Store(context).log("[$trigger] crashed: $e")
             } finally {
@@ -56,6 +57,18 @@ class BootReceiver : BroadcastReceiver() {
 class EnforceJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val trigger = params.extras.getString("trigger") ?: "periodic"
+        if (params.extras.getString("task") == "update") {
+            Thread {
+                try {
+                    if (Enforcer(this).isOwner()) Installer(this).autoUpdate()
+                } catch (e: Exception) {
+                    Store(this).log("[app updates] didn't finish: ${e.message}")
+                } finally {
+                    jobFinished(params, false)
+                }
+            }.start()
+            return true
+        }
         Thread {
             try {
                 Enforcer(this).enforce(trigger)
@@ -74,19 +87,33 @@ class EnforceJob : JobService() {
 object Scheduler {
     private const val PERIODIC_ID = 1
     private const val ONESHOT_ID = 2
+    private const val UPDATE_ID = 3
     private const val PERIOD_MS = 6 * 60 * 60 * 1000L
+    private const val UPDATE_PERIOD_MS = 24 * 60 * 60 * 1000L
 
     private fun component(ctx: Context) = ComponentName(ctx, EnforceJob::class.java)
 
     fun ensurePeriodic(ctx: Context) {
         val js = ctx.getSystemService(JobScheduler::class.java)
-        if (js.getPendingJob(PERIODIC_ID) != null) return
-        js.schedule(
-            JobInfo.Builder(PERIODIC_ID, component(ctx))
-                .setPeriodic(PERIOD_MS)
-                .setPersisted(true)
-                .build()
-        )
+        if (js.getPendingJob(PERIODIC_ID) == null) {
+            js.schedule(
+                JobInfo.Builder(PERIODIC_ID, component(ctx))
+                    .setPeriodic(PERIOD_MS)
+                    .setPersisted(true)
+                    .build()
+            )
+        }
+        // Daily check for app updates (Lawnchair), only when there's a network.
+        if (js.getPendingJob(UPDATE_ID) == null) {
+            js.schedule(
+                JobInfo.Builder(UPDATE_ID, component(ctx))
+                    .setPeriodic(UPDATE_PERIOD_MS)
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setPersisted(true)
+                    .setExtras(PersistableBundle().apply { putString("task", "update") })
+                    .build()
+            )
+        }
     }
 
     fun cancelAll(ctx: Context) {
@@ -131,6 +158,38 @@ object Notifier {
             nm.notify(1, n)
         } catch (e: SecurityException) {
             // notifications not allowed; the log still has it
+        }
+    }
+}
+
+/**
+ * Receives the result of installing an app, stripping an app's updates, or uninstalling an app you
+ * installed, and logs it. Not exported: only this app's own PendingIntent reaches it.
+ */
+class PackageResultReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pkg = intent.getStringExtra(android.content.pm.PackageInstaller.EXTRA_PACKAGE_NAME)
+            ?: intent.getStringExtra(EXTRA_TARGET) ?: "?"
+        val action = intent.getStringExtra(EXTRA_ACTION) ?: "uninstall"
+        val status = intent.getIntExtra(android.content.pm.PackageInstaller.EXTRA_STATUS, -999)
+        val msg = intent.getStringExtra(android.content.pm.PackageInstaller.EXTRA_STATUS_MESSAGE) ?: ""
+        val ok = status == android.content.pm.PackageInstaller.STATUS_SUCCESS
+        Store(context).log(when (action) {
+            "install" -> if (ok) "installed $pkg" else "couldn't install $pkg (status $status) $msg"
+            else -> if (ok) "stripped updates from (or uninstalled) $pkg" else "couldn't strip updates from $pkg (status $status) $msg"
+        })
+        if (action == "install") Notifier.show(context, "Honor Pad 8 Debloater", if (ok) "Installed $pkg." else "Couldn't install $pkg: $msg")
+    }
+
+    companion object {
+        private const val EXTRA_TARGET = "app.honorpad8.debloater.TARGET"
+        private const val EXTRA_ACTION = "app.honorpad8.debloater.ACTION"
+
+        /** Explicit, so it's safe to make mutable: the system has to add the result to it. */
+        fun sender(ctx: Context, pkg: String, action: String = "uninstall"): android.content.IntentSender {
+            val intent = Intent(ctx, PackageResultReceiver::class.java).putExtra(EXTRA_TARGET, pkg).putExtra(EXTRA_ACTION, action)
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (android.os.Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+            return PendingIntent.getBroadcast(ctx, (action + pkg).hashCode(), intent, flags).intentSender
         }
     }
 }

@@ -1,0 +1,175 @@
+# Honor Pad 8 Debloater: the catalogue of known apps and services.
+#
+# The app shows every entry here with a Leave / Hide / Remove choice, and the tablet scan script
+# (tool/scan_tablet.py) uses it to describe what it finds. The second field is the default:
+#   remove = hidden, with its data wiped and its Play Store updates stripped
+#   hide   = hidden, data kept (choosing Leave later restores it as it was)
+#   leave  = offered in the app, but left alone until you choose
+# In a "lock" group the default is lock or leave. ("on" means hide and "off" means leave.)
+#
+# Format (one item per line, fields separated by "|"):
+#   == group-id | mode | Group title | What the group is
+#   package.name | default | Display name | One-line description
+# Modes: hide = a Leave / Hide / Remove choice; lock = the choice locks its permissions off;
+#        core = never hidden by the app, whatever the lists say;
+#        keep = best left alone (things depend on them); not shown in the app, listed so the scan script can label them.
+# Lines starting with # are comments.
+
+== preloads | hide | Preinstalled extras | Third-party apps and leftovers the tablet shipped with.
+com.facebook.katana | remove | Facebook | The Facebook app.
+com.facebook.appmanager | remove | Facebook App Manager | Keeps Facebook apps installed and updated in the background.
+com.facebook.services | remove | Facebook Services | Background services for Facebook apps.
+com.facebook.system | remove | Facebook App Installer | Installs Facebook apps without asking.
+com.booking | remove | Booking.com | Preinstalled travel booking app.
+cn.wps.moffice_eng | remove | WPS Office | Preinstalled office suite.
+com.netflix.mediaclient | remove | Netflix | Preinstalled streaming app. Reinstall it from the Play Store if you want it.
+com.netflix.partner.activation | remove | Netflix activation | Tells Netflix the app came preinstalled.
+com.android.egg | remove | Android Easter egg | The hidden game in Settings > About.
+com.android.dreams.phototable | remove | Photo Table screensaver | A screensaver that shows your photos.
+com.touchtype.swiftkey | remove | SwiftKey keyboard | Microsoft's keyboard. The one in use is never hidden: allow another under Privacy and security, then switch to it.
+com.swiftkey.swiftkeyconfigurator | remove | SwiftKey setup helper | Sets SwiftKey up as the keyboard.
+
+== honor-services | hide | HONOR background services | Telemetry, cloud and update services that run without you opening anything.
+com.hihonor.android.pushagent | remove | HONOR Push | HONOR's own push-message channel. Google's push service still works.
+com.hihonor.hiviewtunnel | remove | Diagnostics upload | Sends logs and diagnostics to HONOR.
+com.hihonor.autoinstallapkfrommcc | remove | Regional auto-installer | Installs region-specific apps based on your country code.
+com.hihonor.systemappsupdater | remove | HONOR app updater | Updates HONOR's apps from the cloud. System updates still work.
+com.hihonor.magazine | remove | Magazine Unlock | Downloads lock-screen pictures and content.
+com.hihonor.browserhomepage | remove | Browser homepage | News feed and homepage content for the browser.
+com.hihonor.numberidentity | remove | Caller ID | Online caller identification and yellow pages.
+com.hihonor.carrierlocation | remove | Carrier location | Location lookups for mobile networks. Not needed on a Wi-Fi tablet.
+com.hihonor.languagedownloader | remove | Language downloader | Downloads extra language packs.
+com.hihonor.printservice | remove | HONOR print service | HONOR's printer plug-in.
+com.hihonor.mmitest | remove | Factory hardware test | The factory test menu.
+com.hihonor.android.projectmenu | remove | Engineering menu | Hidden engineering and test settings.
+com.hihonor.detectrepair | remove | Smart Diagnosis | Hardware diagnostics that report to HONOR.
+com.hihonor.pcassistant | remove | HONOR Suite connector | Lets the HONOR PC Suite manage the tablet.
+com.hihonor.searchservice | remove | HONOR Search service | The background part of HONOR Search.
+com.hihonor.hiview | remove | System log collector | Collects system logs. Test for a day after removing it.
+com.hihonor.awareness | remove | Context awareness | Learns your habits to tune battery and notifications. Test after removing it.
+com.hihonor.brain | remove | AI engine | Suggestions behind the launcher and assistant. Test after removing it.
+com.hihonor.lbs | remove | HONOR location | HONOR's own location service. Check a maps app still finds you.
+com.hihonor.trustcircle | remove | Trusted circle | Device-trust service used by Find Device.
+
+== honor-apps | hide | HONOR apps | Apps you can replace with your own choice.
+com.hihonor.phoneservice | remove | My HONOR | Support, offers and account app.
+com.hihonor.tips | remove | Tips | Feature tips and notifications about them.
+com.hihonor.android.totemweather | remove | Weather | HONOR Weather and its widget.
+com.hihonor.lens | remove | AI Lens | Image recognition and shopping lookups.
+com.hihonor.koBackup | remove | Backup | HONOR's backup app.
+com.hihonor.android.clone | remove | Device Clone | Copies data from an old device.
+com.hihonor.email | remove | Email | HONOR's email app.
+com.hihonor.soundrecorder | remove | Recorder | Sound recorder.
+com.hihonor.videoeditor | remove | Video Editor | Video editor.
+com.hihonor.notepad | remove | Notepad | Notes app.
+com.hihonor.android.thememanager | remove | Themes | Theme and wallpaper store. Set your wallpaper first.
+com.hihonor.filemanager | remove | Files | File manager. Install another file manager first.
+com.hihonor.calendar | remove | Calendar | Calendar app. Install another calendar first.
+com.hihonor.calculator | remove | Calculator | Calculator. Install another calculator first.
+com.hihonor.contacts | remove | Contacts | Contacts app. Your Google contacts still sync.
+com.hihonor.search | remove | HONOR Search | The home-screen search that asks you to accept its terms.
+com.hihonor.photos | leave | Gallery | HONOR's gallery. Install another gallery first.
+com.hihonor.screenrecorder | remove | Screen recorder | Records the screen.
+com.hihonor.smartshot | remove | Gesture screenshots | Knuckle and gesture screenshots.
+com.hihonor.HnMultiScreenShot | remove | Scrolling screenshots | Long, scrolling screenshots.
+com.hihonor.hndockbar | leave | Side dock | The swipe-in app dock at the screen edge.
+com.hihonor.android.FloatTasks | leave | Floating windows | Apps in floating windows.
+com.hihonor.assistant | remove | YOYO suggestions | Suggestion cards on the home screen. Check the launcher after removing it.
+com.hihonor.hnstartupguide | remove | Setup guide | The guide shown after first setup.
+
+== honor-connect | hide | HONOR Connect and sharing | Sharing and multi-device features. Only useful with other HONOR phones, PCs, watches or earbuds.
+com.hihonor.android.instantshare | remove | HONOR Share | Wireless sharing with other HONOR devices.
+com.hihonor.controlcenter | remove | Connect control centre | Device-connection panel in the control centre.
+com.hihonor.airlink | remove | AirLink | Quick pairing with HONOR devices.
+com.hihonor.android.wfdft | remove | Wi-Fi Direct transfer | File transfer over Wi-Fi Direct.
+com.hihonor.associateassistant | remove | Associate assistant | Links the tablet with your other HONOR devices.
+com.hihonor.synergy | remove | Synergy | Shared clipboard and apps across HONOR devices.
+com.hihonor.handoff | remove | Handoff | Continue a task on another HONOR device.
+com.hihonor.iconnect | remove | iConnect | Connection service for HONOR accessories.
+com.hihonor.nearby | remove | Nearby | Finds HONOR devices nearby.
+com.hihonor.dmsdp | remove | Distributed devices | Lets other HONOR devices use the tablet's camera, mic and screen.
+com.hihonor.devicegroupmanage | remove | Device groups | Keeps track of your HONOR devices.
+com.hihonor.cooperatedconfig | remove | Cooperation settings | Settings for multi-device features.
+com.hihonor.desktop.explorer | remove | PC-mode explorer | File explorer for the PC-style desktop.
+com.hihonor.audioaccessorymanager | remove | Earbuds pop-ups | Pairing pop-ups for HONOR earbuds.
+com.hihonor.android.mirrorshare | remove | Screen mirroring | Mirror the screen to a TV. Choose Leave if you cast to a TV.
+com.hihonor.hisight | remove | Projection | Projection and casting. Choose Leave if you cast to a TV.
+
+== google | hide | Google apps | Google's own apps. Play Store and Google services are never touched.
+com.google.android.apps.tachyon | remove | Google Meet | Video calls.
+com.google.android.gm | remove | Gmail | Email.
+com.google.android.apps.youtube.music | remove | YouTube Music | Music streaming.
+com.google.android.apps.docs | remove | Google Drive | Cloud storage.
+com.google.android.videos | remove | Google TV | Films and TV.
+com.google.android.youtube | leave | YouTube | Videos.
+com.google.android.apps.photos | leave | Google Photos | Photos and cloud backup.
+com.google.android.apps.maps | remove | Google Maps | Maps.
+com.google.android.googlequicksearchbox | remove | Google app | Search, Discover feed and Assistant.
+com.android.chrome | leave | Chrome | Web browser. Install and pick another browser first.
+com.google.android.apps.wellbeing | remove | Digital Wellbeing | Screen-time tracking.
+com.google.android.feedback | remove | Google Feedback | Sends crash reports to Google.
+com.google.android.gms.location.history | remove | Google Timeline | Location history.
+com.google.android.tts | leave | Speech Services by Google | The voice that reads text aloud. Install another voice first if you remove it.
+com.google.android.marvin.talkback | leave | Android Accessibility Suite | TalkBack and other accessibility tools. Choose Leave if you use them.
+
+== google-setup | hide | Google setup and telemetry | Parts only used during first setup, plus Google's reporting. Your account, Play Store and Google services keep working.
+com.google.android.setupwizard | hide | Setup Wizard | The first-setup screens. Still runs in the background afterwards.
+com.google.android.partnersetup | hide | Partner Setup | Tells Google which manufacturer and region the tablet is from.
+com.google.android.apps.restore | hide | Restore | Copies apps and data from an old device during setup.
+com.google.android.apps.setupwizard.searchselector | hide | Search-engine chooser | The "choose your search engine" screen from setup.
+com.google.android.onetimeinitializer | hide | One-time initialiser | Sets Google defaults on first boot, then does nothing.
+com.google.mainline.telemetry | remove | Mainline telemetry | Reports how Google Play system updates install. The updates keep working.
+
+== android-extras | hide | Android extras | Parts of Android a Wi-Fi tablet barely uses.
+com.android.bookmarkprovider | remove | Bookmark provider | Bookmarks for Android's old built-in browser, which this tablet doesn't have.
+com.android.wallpaper.livepicker | remove | Live-wallpaper picker | Chooses animated wallpapers. Still wallpapers don't need it.
+com.android.printspooler | leave | Print spooler | Android's printing service. Printing stops if you hide it.
+com.google.android.printservice.recommendation | leave | Print-service finder | Suggests printer plug-ins.
+com.android.dreams.basic | leave | Basic screensaver | The colour-cycling screensaver shown while charging.
+com.android.dynsystem | leave | Dynamic System Updates | Boots test versions of Android. Needs an unlocked bootloader, so it can't be used here.
+com.android.incallui | leave | In-call screen | The phone-call screen. Unused on a Wi-Fi tablet; test a WhatsApp or Signal call after hiding it.
+com.android.mms.service | leave | MMS service | Picture messages over a mobile network.
+com.android.ons | leave | Opportunistic network service | Switches between mobile networks. The phone service expects it.
+com.google.android.cellbroadcastreceiver | leave | Emergency alerts | Government alerts sent over mobile networks, which a Wi-Fi tablet can't receive.
+
+== lockdown | lock | Permission locks | For apps that can't be hidden. Their permissions are locked off, so they can't use the camera, location, contacts and so on.
+com.hihonor.id | lock | HONOR ID | HONOR's account service. HONOR protects it from being removed, so its permissions are locked instead.
+
+== core | core | Core parts | Never hidden, whatever the list says.
+android | - | Android system | The operating system.
+com.android.systemui | - | System UI | Status bar, notifications and navigation.
+com.android.settings | - | Settings | The Settings app.
+com.android.phone | - | Phone services | Telephony and network services.
+com.android.shell | - | Shell | Needed for adb.
+com.android.vending | - | Play Store | Installs and updates apps.
+com.google.android.gms | - | Google Play services | Push messages, sign-in and location for Google apps.
+com.google.android.gsf | - | Google Services Framework | Part of Google Play services.
+com.google.android.webview | - | Android System WebView | Shows web pages inside apps.
+com.google.android.permissioncontroller | - | Permission controller | Permission prompts.
+com.google.android.packageinstaller | - | Package installer | Installs apps.
+com.google.android.documentsui | - | Files picker | The system file picker.
+com.hihonor.android.launcher | - | HONOR launcher | The home screen.
+com.hihonor.android.internal.app | - | HONOR framework | Part of the operating system.
+com.hihonor.systemmanager | - | Optimiser | Battery and app management.
+com.hihonor.systemserver | - | HONOR system server | Part of the operating system.
+com.hihonor.securityserver | - | Security server | Part of the operating system.
+com.hihonor.ouc | - | System update | Installs system updates.
+com.hihonor.iaware | - | iAware | Performance scheduler.
+com.hihonor.powergenie | - | Power manager | Battery management.
+com.hihonor.bluetooth | - | Bluetooth | Bluetooth.
+com.hihonor.msdp | - | Sensor platform | Sensor and activity recognition.
+com.hihonor.securitypluginbase | - | Security plug-ins | Part of the operating system.
+com.hihonor.keychain | - | Keychain | Saved passwords.
+com.hihonor.permissioncontroller.overlay | - | Permission screens | HONOR's look for permission prompts.
+
+== keep | keep | Best left alone | HONOR parts that other features depend on. Not shown in the app; add one under Your additions only if you know what breaks.
+com.hihonor.camera | - | Camera | The camera app.
+com.hihonor.deskclock | - | Clock | Clock and alarms.
+com.hihonor.medialibrary | - | Media library | Indexes photos, music and videos for other apps.
+com.hihonor.imedia.sws | - | Sound effects | Audio processing.
+com.hihonor.motionservice | - | Motion service | Rotation and motion gestures.
+com.hihonor.android.hnaps | - | Display and power service | Screen resolution and power tuning.
+com.hihonor.behaviorauth | - | Behaviour authentication | Part of the lock screen's security.
+com.hihonor.deviceauth | - | Device authentication | Part of the lock screen's security.
+com.hihonor.coauthservice | - | Collaborative unlock | Part of the lock screen's security.
+com.dts.dtsxultra | - | DTS sound | Speaker tuning.
