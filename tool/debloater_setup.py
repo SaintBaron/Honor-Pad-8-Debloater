@@ -884,27 +884,46 @@ def installed_version(adb: Adb) -> Optional[int]:
 # the command that opens the right screen on the tablet, and a read-only command whose output says whether it's done.
 PRIVACY_TODOS = [
     ("screenlock", "Set a screen lock",
-     "A PIN, pattern or password. Without one, anyone who picks up the tablet gets straight in, and hiding "
-     "notification text on the lock screen can't work.",
+     "A PIN, pattern or password, so nobody who picks it up can just get in.",
      "Open on the tablet", "am start -a android.app.action.SET_NEW_PASSWORD", "dumpsys lock_settings"),
     ("playprotect", "Stop Play Protect sending your apps to Google",
-     "In Play Protect's settings (the gear), turn off \"Improve harmful app detection\". It uploads copies of apps "
-     "that didn't come from the Play Store, including F-Droid apps and the debloater. Leave \"Scan apps with "
-     "Play Protect\" on.",
+     "Gear > turn off \"Improve harmful app detection\" (uploads non-Play apps).",
      "Open on the tablet",
      "am start -n com.google.android.gms/.security.settings.VerifyAppsSettingsActivity || "
      "monkey -p com.android.vending -c android.intent.category.LAUNCHER 1",
      "settings get global upload_apk_enable"),
     ("wifiplus", "Turn off HONOR's Wi-Fi+",
-     "Settings > Wi-Fi > More settings (or the \u22ee menu) > Wi-Fi+. It tests your connection by contacting outside "
-     "servers, including baidu.com, and switches networks by itself.",
+     "Wi-Fi > More settings > Wi-Fi+. It tests networks via outside servers (baidu.com).",
      "Open on the tablet", "am start -a android.settings.WIFI_SETTINGS", "settings get global hn_wifipro_enable"),
+    ("adid", "Delete your advertising ID",
+     "Privacy > Ads (or Google > Ads) > Delete advertising ID. Not checkable here.",
+     "Open on the tablet",
+     "am start -a com.google.android.gms.settings.ADS_PRIVACY || am start -a android.settings.PRIVACY_SETTINGS",
+     None),
 ]
 
+# Android checks every network by contacting Google (connectivitycheck.gstatic.com), outside any VPN. Turning the
+# check off stops that, but hotel and café Wi-Fi sign-in pages no longer pop up by themselves (open any http:// page
+# in a browser to get them). These are written over USB with adb; the app can't change them.
+CONNECTIVITY_OFF = "settings put global captive_portal_mode 0"
+CONNECTIVITY_ON = "settings delete global captive_portal_mode"
+CONNECTIVITY_GET = "settings get global captive_portal_mode"
 
-def privacy_todo_done(todo_id: str, output: str) -> Optional[bool]:
-    """Read the check command's output: True = done, False = still to do, None = can't tell."""
+
+def connectivity_check_off(output: str) -> Optional[bool]:
     out = (output or "").strip()
+    if out == "0":
+        return True
+    if out in ("null", "1", "2", ""):
+        return False
+    return None
+
+
+def privacy_todo_done(todo_id: str, output: Optional[str]) -> Optional[bool]:
+    """Read the check command's output: True = done, False = still to do, None = can't tell."""
+    if output is None:
+        return None
+    out = output.strip()
     if todo_id == "screenlock":
         m = re.search(r"Credential ?Type:\s*(\w+)", out, re.I)
         if not m:
@@ -1974,8 +1993,8 @@ def main() -> None:
 
         # --------------------------------------------------------------- finish
         def step_privacy(self) -> None:
-            self.para("Settings only you can change: Android doesn't let apps change them. Each button opens the right "
-                      "screen on the tablet. They're optional, and the app shows the same list until they're done.")
+            self.para("Settings Android doesn't let apps change. Each button opens the right screen on the tablet. "
+                      "All optional; the app shows the same list until they're done.")
             top = ttk.Frame(self.body)
             top.pack(anchor="w", fill="x", pady=(0, 4))
             check_btn = ttk.Button(top, text="Check again")
@@ -1985,7 +2004,7 @@ def main() -> None:
             rows = []
             for todo_id, title, why, button, open_cmd, check_cmd in PRIVACY_TODOS:
                 box = ttk.Frame(self.body)
-                box.pack(anchor="w", fill="x", pady=(6, 2))
+                box.pack(anchor="w", fill="x", pady=(4, 0))
                 head = ttk.Frame(box)
                 head.pack(anchor="w", fill="x")
                 mark = ttk.Label(head, text="…", style="Muted.TLabel", width=8)
@@ -1997,34 +2016,70 @@ def main() -> None:
                                ).pack(side="right")
                 lbl = ttk.Label(box, text=why, style="Muted.TLabel", justify="left")
                 lbl.pack(anchor="w", padx=(64, 0))
-                self.wrap(lbl, 120)
+                self.wrap(lbl, 70)
                 rows.append((todo_id, check_cmd, mark))
+            latest = [0]   # only the newest check's answer is shown (an older, slower one could overwrite it)
+
             def check():
+                latest[0] += 1
+                mine = latest[0]
                 if not (self.adb and self.adb.serial):
                     self.set_status(summary, "The tablet isn't connected, so these can't be checked. The app on the "
                                              "tablet shows the same list.", "warn")
                     return
 
                 def work():
-                    return [(todo_id, privacy_todo_done(todo_id, self.adb.shell(check_cmd, quiet=True)[1]), mark)
-                            for todo_id, check_cmd, mark in rows]
+                    res = [(todo_id, privacy_todo_done(todo_id, self.adb.shell(check_cmd, quiet=True)[1]
+                                                       if check_cmd else None), mark)
+                           for todo_id, check_cmd, mark in rows]
+                    return res, connectivity_check_off(self.adb.shell(CONNECTIVITY_GET, quiet=True)[1])
 
-                def done(results, err):
+                def done(both, err):
+                    if mine != latest[0]:
+                        return
                     if err:
                         self.set_status(summary, f"Couldn't check: {err}", "warn")
                         return
+                    results, conn_off = both
+                    try:
+                        conn_mark.configure(text={True: "Off", False: "On", None: "?"}[conn_off],
+                                            style="Good.TLabel" if conn_off else "Muted.TLabel")
+                    except tk.TclError:
+                        pass
                     left = 0
                     for todo_id, ok, mark in results:
                         text, style = {True: ("✓ Done", "Good.TLabel"), False: ("To do", "Warn.TLabel"),
                                        None: ("Check it", "Muted.TLabel")}[ok]
-                        left += ok is not True
+                        left += ok is False
                         try:
                             mark.configure(text=text, style=style)
                         except tk.TclError:
                             pass
-                    self.set_status(summary, "✓ All done." if left == 0 else
+                    self.set_status(summary, "✓ All the ones that can be checked are done." if left == 0 else
                                     f"{left} left. You can carry on and do them later.", "good" if left == 0 else "")
                 self.background(work, done)
+            # The connectivity check: a choice, written over USB (the app can't change it).
+            box = ttk.Frame(self.body)
+            box.pack(anchor="w", fill="x", pady=(4, 0))
+            head = ttk.Frame(box)
+            head.pack(anchor="w", fill="x")
+            conn_mark = ttk.Label(head, text="…", style="Muted.TLabel", width=8)
+            conn_mark.pack(side="left")
+            ttk.Label(head, text="Android's connectivity check", font=self.f_head).pack(side="left")
+            if self.adb and self.adb.serial:
+                def set_conn(cmd: str):
+                    self.log(f"$ adb shell {cmd}")
+                    self.background(lambda: self.adb.shell(cmd), lambda r, e: check())
+                ttk.Button(head, text="Turn on", style="Quiet.TButton",
+                           command=lambda: set_conn(CONNECTIVITY_ON)).pack(side="right")
+                ttk.Button(head, text="Turn off", style="Quiet.TButton",
+                           command=lambda: set_conn(CONNECTIVITY_OFF)).pack(side="right", padx=(0, 4))
+            lbl = ttk.Label(box, text="It tests every network via Google, even with a VPN. Off: Wi-Fi sign-in pages "
+                                      "won't pop up.",
+                            style="Muted.TLabel", justify="left")
+            lbl.pack(anchor="w", padx=(64, 0))
+            self.wrap(lbl, 70)
+
             check_btn.configure(command=check)
             check()
             self.complete()   # optional: never blocks Next

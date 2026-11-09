@@ -54,6 +54,11 @@ class Net(private val open: (URL) -> HttpURLConnection = { it.openConnection() a
                     url = URL(url, loc)
                     return@repeat
                 }
+                if ((code == 403 || code == 429) && url.host.equals("api.github.com", ignoreCase = true) &&
+                    (c.getHeaderField("X-RateLimit-Remaining") == "0" || code == 429)) {
+                    throw NetError("GitHub's limit of 60 checks an hour for your internet connection was reached. " +
+                        "Try again in an hour")
+                }
                 if (code != 200) throw NetError("the server answered $code")
                 val len = c.contentLengthLong
                 if (len > max) throw NetError("the download is bigger than expected")

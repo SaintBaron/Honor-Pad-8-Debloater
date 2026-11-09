@@ -187,7 +187,7 @@ something goes wrong. **Show details** at the bottom shows exactly what it's doi
 | 6. Install the app | Installs it, or updates the copy that's already there. **Watch the tablet**: HONOR asks you to confirm apps installed over USB. |
 | 7. Remove accounts | Shows which accounts are still signed in (only their type, such as "Google account", never the address) and updates by itself as you remove them. Skipped if the app is already set up. |
 | 8. Make it device owner | Runs the one command that gives the app its powers. Skipped if it's already set up. |
-| 9. Privacy settings | Settings only you can change, because Android doesn't let apps change them: set a **screen lock**; turn off Play Protect's **Improve harmful app detection** (it uploads copies of apps that didn't come from the Play Store to Google); turn off HONOR's **Wi-Fi+** (it tests connections by contacting outside servers, including baidu.com). Each has a button that opens the right screen on the tablet, and the tool checks them over USB and ticks them off. Optional: Next is never blocked. |
+| 9. Privacy settings | Settings only you can change, because Android doesn't let apps change them: set a **screen lock**; turn off Play Protect's **Improve harmful app detection** (it uploads copies of apps that didn't come from the Play Store to Google); turn off HONOR's **Wi-Fi+** (it tests connections by contacting outside servers, including baidu.com); **delete your advertising ID**. Each has a button that opens the right screen on the tablet, and the tool checks what it can over USB and ticks them off. It can also turn **Android's connectivity check** off (see below). Optional: Next is never blocked. |
 | 10. Finish on the tablet | Sign back in; open the app and check it says **Protection is on**; allow it in HONOR's battery settings. Each has a button that opens the right screen on the tablet. |
 
 That's it. The app now looks after itself. Last of all, turn USB debugging off again (or switch on **Block USB
@@ -294,13 +294,13 @@ See [Installing apps safely](#installing-apps-safely) for what's checked before 
 
 Until they're done, a card at the top lists the settings only you can change, each with a button that opens the right
 screen: a **screen lock**; letting the app **start when the tablet does** (HONOR's App launch screen); Play Protect's
-**Improve harmful app detection** off; HONOR's **Wi-Fi+** off; and **USB debugging** off once you're done with the
-computer. The ones the app can check (screen lock, USB debugging, start-up) tick themselves; for the others, Android
+**Improve harmful app detection** off; HONOR's **Wi-Fi+** off; your **advertising ID** deleted (Settings > Privacy > Ads,
+or Settings > Google > Ads); and **USB debugging** off once you're done with the computer. The ones the app can check (screen lock, USB debugging, start-up) tick themselves; for the others, Android
 doesn't let it look, so tap **Mark as done**. **Advanced > Show the checklist again** brings back the ones you marked.
 
 ### Privacy and security settings
 
-Each is an **Off / On** choice in the **Privacy and security** card. The first four are on by default.
+Each is an **Off / On** choice in the **Privacy and security** card. Five are on by default.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -310,10 +310,32 @@ Each is an **Off / On** choice in the **Privacy and security** card. The first f
 | Approve keyboards and accessibility apps | **On** | Only the system's own keyboards and accessibility services, plus ones you allow, can be used: the two ways an app could read everything you type or see. Whatever you're using when it's first turned on is allowed automatically. To use a new keyboard (HeliBoard, say), choose **Allow** for it in the card first, then switch to it in Settings. One that's switched on stays allowed until you turn it off in Settings. |
 | Hide notification text on the lock screen | Off | Shows that something arrived, not what it says, until you unlock. Needs a PIN, pattern or password. |
 | Block USB debugging | Off | Turns adb off and stops it being turned on. Switch it off again before running the setup tool or the scan script. |
+| Turn off Smart Lock | **On** | Stops the tablet staying unlocked by itself at trusted places, near trusted devices or while carried. Only matters once you have a screen lock. |
+| USB for charging only | Off | Blocks all data over the USB port, so a computer, public charger or cable can't reach the tablet; also stops file transfer, the setup tool and the scan script. Only shown if the tablet's hardware supports it (Android 12 needs HONOR's support for this). |
 | Tracker-blocking Private DNS | Off | Off, **AdGuard** (`dns.adguard-dns.com`: ads, trackers and malware), **Quad9** (`dns.quad9.net`: malware only) or your own resolver. DNS lookups are encrypted and known tracking domains, HONOR's included, don't resolve. The setting is locked so nothing else can change it. If the service is ever down, websites won't load until you switch this off. |
 | Lock a VPN or firewall always on | Off | Pick an installed VPN or firewall app (for example RethinkDNS from F-Droid). It's kept running, and nothing can go online outside it, so its per-app blocking can't be bypassed. If that app stops working, nothing gets online until you release it in the card. |
 
 **Release device owner** turns all of these back off.
+
+### Android's connectivity check
+
+Every time the tablet joins a network, Android contacts Google (`connectivitycheck.gstatic.com`) to test it, outside any
+VPN. Android doesn't let apps change this, so the setup tool's **Privacy settings** step can turn it **off** (or back
+**on**) over USB with `adb shell settings put global captive_portal_mode 0` (and `settings delete global
+captive_portal_mode` to undo). With it off, Google isn't contacted, but hotel and café Wi-Fi sign-in pages don't pop up
+by themselves: open any `http://` page in a browser to get them. HONOR's Wi-Fi+ runs its own checks, so turn that off
+too.
+
+### Free and open-source apps worth knowing about
+
+The app only installs F-Droid, Lawnchair and HeliBoard; it isn't an app store. These are well-regarded replacements for
+things the defaults remove, all from F-Droid (or the project's own F-Droid repository):
+
+| Instead of | Try | Notes |
+|---|---|---|
+| HONOR Gallery | Fossify Gallery (`org.fossify.gallery`) | Photos and videos, no network access. Fossify also has Calendar, Files and more. |
+| A per-app internet switch | RethinkDNS (`com.celzero.bravedns`) | A firewall and DNS blocker that works as a VPN. Lock it on with **Lock a VPN or firewall always on**. |
+| Chrome | IronFox (`org.ironfoxoss.ironfox`) | A hardened Firefox. Install from IronFox's own F-Droid repository. |
 
 What else other tools do, and why it isn't here:
 
@@ -321,6 +343,8 @@ What else other tools do, and why it isn't here:
   doesn't have. Hiding the whole app, or locking its permissions, is what's possible here.
 - **A separate work profile for untrusted apps** (Shelter, Insular) can't be created while a device owner is set; Android
   blocks it.
+- **Restarting after hours locked** (GrapheneOS's auto-reboot) and **Common Criteria mode** need either changes to Android
+  or a lot of care on a firmware nobody has tested them on; they're possible future additions, not here yet.
 - **Universal Android Debloater, Canta and Hail** remove, disable or hide apps. This project's catalogue and Leave / Hide /
   Remove choices cover the same ground for this tablet, and keep doing it after updates.
 
@@ -646,8 +670,11 @@ The same commands can run on the tablet itself, using Android's **Wireless debug
 
 ## Building it yourself
 
-GitHub Actions builds the signed APK and packages the setup tool for Windows, macOS and Linux on every push to `main`,
-then publishes them all as a numbered release (`v1.0.N`) with a `SHA256SUMS.txt` checksum file. To build your own copy (for example in a fork):
+GitHub Actions builds the signed APK and packages the setup tool for Windows, macOS and Linux on every push to `main`.
+The APK is published as a numbered release (`v1.0.N`) as soon as it's built, so the tablet's self-update doesn't wait;
+the setup tools are added to that release once they're built, with a `SHA256SUMS.txt` covering everything. If one
+runner is slow or fails (GitHub's macOS machines can queue for a long time), the others are still added, and the next
+push isn't held up. To build your own copy (for example in a fork):
 
 1. **Make a signing key** (needs a JDK for `keytool`):
    ```sh

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.UserManager
 
 /**
@@ -53,12 +54,21 @@ class Hardening(
                 store.log("cloud backup ${if (wantEnabled) "allowed" else "turned off"}")
             }
         }
-        step("lock-screen notifications") {
-            val want = if (on(Store.S_REDACT_LOCKSCREEN)) DevicePolicyManager.KEYGUARD_DISABLE_UNREDACTED_NOTIFICATIONS
-            else DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE
+        step("lock screen") {
+            val want = keyguardFlags()
             if (dpm.getKeyguardDisabledFeatures(admin) != want) {
                 dpm.setKeyguardDisabledFeatures(admin, want)
-                store.log("lock-screen notification text ${if (want == 0) "shown" else "hidden"}")
+                store.log("lock screen: notification text ${if (want and REDACT != 0) "hidden" else "shown"}, " +
+                    "Smart Lock ${if (want and NO_TRUST != 0) "off" else "allowed"}")
+            }
+        }
+        step("USB data") {
+            if (usbDataSupported()) {
+                val wantEnabled = !on(Store.S_USB_CHARGE_ONLY)
+                if (dpm.isUsbDataSignalingEnabled != wantEnabled) {
+                    dpm.setUsbDataSignalingEnabled(wantEnabled)
+                    store.log("USB ${if (wantEnabled) "data allowed" else "set to charging only"}")
+                }
             }
         }
         step("keyboards and accessibility apps") { applyInputApproval() }
@@ -82,8 +92,10 @@ class Hardening(
         }
         if (on(Store.S_BACKUP_OFF)) check("cloud backup off") { !dpm.isBackupServiceEnabled(admin) }
         if (on(Store.S_REDACT_LOCKSCREEN)) check("lock-screen notification text hidden") {
-            dpm.getKeyguardDisabledFeatures(admin) and DevicePolicyManager.KEYGUARD_DISABLE_UNREDACTED_NOTIFICATIONS != 0
+            dpm.getKeyguardDisabledFeatures(admin) and REDACT != 0
         }
+        if (on(Store.S_NO_SMART_LOCK)) check("Smart Lock off") { dpm.getKeyguardDisabledFeatures(admin) and NO_TRUST != 0 }
+        if (on(Store.S_USB_CHARGE_ONLY) && usbDataSupported()) check("USB set to charging only") { !dpm.isUsbDataSignalingEnabled }
         if (on(Store.S_APPROVE_INPUT)) {
             check("keyboards limited to approved ones") { dpm.getPermittedInputMethods(admin) != null }
             check("accessibility apps limited to approved ones") { dpm.getPermittedAccessibilityServices(admin) != null }
@@ -215,6 +227,16 @@ class Hardening(
         emptyList()
     }
 
+    private fun keyguardFlags(): Int =
+        (if (on(Store.S_REDACT_LOCKSCREEN)) REDACT else 0) or (if (on(Store.S_NO_SMART_LOCK)) NO_TRUST else 0)
+
+    /** Charging-only USB needs Android 12 and support in the tablet's USB hardware layer. */
+    fun usbDataSupported(): Boolean = Build.VERSION.SDK_INT >= 31 && try {
+        dpm.canUsbDataSignalingBeDisabled()
+    } catch (e: Exception) {
+        false
+    }
+
     /** Undo everything (used when the debloater is removed). */
     fun releaseAll() {
         step("release") {
@@ -222,6 +244,7 @@ class Hardening(
             dpm.clearUserRestriction(admin, UserManager.DISALLOW_CONFIG_PRIVATE_DNS)
             dpm.setBackupServiceEnabled(admin, true)
             dpm.setKeyguardDisabledFeatures(admin, DevicePolicyManager.KEYGUARD_DISABLE_FEATURES_NONE)
+            if (usbDataSupported() && !dpm.isUsbDataSignalingEnabled) dpm.setUsbDataSignalingEnabled(true)
             dpm.setPermittedInputMethods(admin, null)
             dpm.setPermittedAccessibilityServices(admin, null)
             if (store.setting(Store.S_DNS_APPLIED, "") == "yes") dpm.setGlobalPrivateDnsModeOpportunistic(admin)
@@ -236,7 +259,10 @@ class Hardening(
 
     companion object {
         /** Settings that are on unless you turn them off. */
-        val DEFAULT_ON = setOf(Store.S_BACKUP_OFF, Store.S_NO_AI_CAPTURE, Store.S_NO_NEW_USERS, Store.S_APPROVE_INPUT)
+        val DEFAULT_ON = setOf(Store.S_BACKUP_OFF, Store.S_NO_AI_CAPTURE, Store.S_NO_NEW_USERS, Store.S_APPROVE_INPUT,
+            Store.S_NO_SMART_LOCK)
+        private const val REDACT = DevicePolicyManager.KEYGUARD_DISABLE_UNREDACTED_NOTIFICATIONS
+        private const val NO_TRUST = DevicePolicyManager.KEYGUARD_DISABLE_TRUST_AGENTS
 
         /** Tracker-blocking (or malware-blocking) resolvers that work with Android's Private DNS. */
         val DNS_PROVIDERS = linkedMapOf(

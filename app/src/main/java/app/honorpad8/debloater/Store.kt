@@ -181,6 +181,8 @@ class Store(private val ctx: Context) {
         const val S_LAWNCHAIR_TAG = "lawnchair_last_release"
         const val S_HOME = "home_locked_to"
         const val S_SELF_AUTO = "self_auto_update"
+        const val S_NO_SMART_LOCK = "no_smart_lock"
+        const val S_USB_CHARGE_ONLY = "usb_charge_only"
         const val S_HELI_AUTO = "heliboard_auto_update"
         const val S_HELI_TAG = "heliboard_last_release"
         const val S_REPLACE_OFFER = "replace_offer"     // "" = not asked yet, "yes", "no"

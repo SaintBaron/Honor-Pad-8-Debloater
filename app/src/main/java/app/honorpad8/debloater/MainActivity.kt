@@ -60,6 +60,7 @@ class MainActivity : Activity() {
         val bootResult: String,                   // "<time>|ok|late|<n> problems", or "" before the first restart
         val bootMissed: Boolean,                  // restarted since the start-up check last ran
         val todos: List<Todo>,                    // settings only the user can change
+        val usbDataSupported: Boolean,            // the tablet can switch USB to charging only
     ) {
         fun setting(key: String, default: String) = settings[key] ?: default
         fun on(key: String) = setting(key, if (key in Hardening.DEFAULT_ON) "on" else "off") == "on"
@@ -159,7 +160,8 @@ class MainActivity : Activity() {
         val pkgs = (known + hide + remove + lock + news + vpnApps + inputApps + inUse.keys).toSet()
         val installer = enforcer.installer()
         val settingKeys = listOf(Store.S_BACKUP_OFF, Store.S_NO_AI_CAPTURE, Store.S_NO_NEW_USERS, Store.S_APPROVE_INPUT,
-            Store.S_REDACT_LOCKSCREEN, Store.S_NO_DEBUGGING, Store.S_DNS, Store.S_VPN, Store.S_LAWNCHAIR_AUTO, Store.S_HOME,
+            Store.S_REDACT_LOCKSCREEN, Store.S_NO_DEBUGGING, Store.S_NO_SMART_LOCK, Store.S_USB_CHARGE_ONLY,
+            Store.S_DNS, Store.S_VPN, Store.S_LAWNCHAIR_AUTO, Store.S_HOME,
             Store.S_SELF_AUTO, Store.S_HELI_AUTO, Store.S_REPLACE_OFFER)
         @Suppress("DEPRECATION")
         val version = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
@@ -191,6 +193,7 @@ class MainActivity : Activity() {
             // Give the start-up broadcast a few minutes to arrive before calling it missed.
             bootMissed = android.os.SystemClock.elapsedRealtime() > 4 * 60_000L && enforcer.bootCheckMissed(),
             todos = todos(),
+            usbDataSupported = hardening.usbDataSupported(),
         )
     }
 
@@ -621,6 +624,7 @@ class MainActivity : Activity() {
             }, marked("startup")),
             Todo("playprotect", globalSetting("upload_apk_enable")?.let { it == "0" }, marked("playprotect")),
             Todo("wifiplus", globalSetting("hn_wifipro_enable")?.let { it == "false" || it == "0" }, marked("wifiplus")),
+            Todo("adid", null, marked("adid")),
             Todo("usbdebug", if (adb < 0) null else adb == 0, marked("usbdebug")),
         )
     }
@@ -639,6 +643,9 @@ class MainActivity : Activity() {
             "In Play Protect's settings (the gear), turn off \"Improve harmful app detection\". It uploads copies of " +
                 "apps that didn't come from the Play Store, including F-Droid apps and this one. Leave \"Scan apps " +
                 "with Play Protect\" on.", "Open Play Protect")
+        "adid" -> Triple("Delete your advertising ID",
+            "Settings > Privacy > Ads (on some tablets Settings > Google > Ads) > Delete advertising ID. Apps and ad " +
+                "networks then get zeros instead of an ID that follows you between apps.", "Open ad settings")
         "wifiplus" -> Triple("Turn off HONOR's Wi-Fi+",
             "Settings > Wi-Fi > More settings (or the ⋮ menu) > Wi-Fi+. It tests your connection by contacting outside " +
                 "servers, including baidu.com, and switches networks by itself.", "Open Wi-Fi settings")
@@ -657,6 +664,8 @@ class MainActivity : Activity() {
                 "com.google.android.gms.security.settings.VerifyAppsSettingsActivity"),
                 packageManager.getLaunchIntentForPackage("com.android.vending"))
             "wifiplus" -> listOf(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+            "adid" -> listOf(Intent("com.google.android.gms.settings.ADS_PRIVACY"),
+                Intent(android.provider.Settings.ACTION_PRIVACY_SETTINGS), Intent(android.provider.Settings.ACTION_SETTINGS))
             else -> listOf(Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS),
                 Intent(android.provider.Settings.ACTION_SETTINGS))
         }
@@ -860,6 +869,7 @@ class MainActivity : Activity() {
             Triple(Store.S_APPROVE_INPUT, "Approve keyboards and accessibility apps", "Only the system's own, and ones you allow below, can be keyboards or accessibility services: the two ways an app could read everything you type or see."),
             Triple(Store.S_REDACT_LOCKSCREEN, "Hide notification text on the lock screen", "Shows that something arrived, not what it says, until you unlock. Needs a PIN, pattern or password."),
             Triple(Store.S_NO_DEBUGGING, "Block USB debugging", "Turns adb off and stops it being turned on. Switch this off before updating with the setup tool or running the scan script."),
+            Triple(Store.S_NO_SMART_LOCK, "Turn off Smart Lock", "Stops the tablet staying unlocked by itself (at trusted places, near trusted devices, or while carried). Only matters once you have a screen lock."),
         )
         for ((key, title, about) in toggles) {
             body.addView(ui.divider(), ui.lp(top = 8))
@@ -870,6 +880,14 @@ class MainActivity : Activity() {
                 }
                 for (p in m.inputApps) body.addView(approveRow(m, p), ui.lp(top = 4))
             }
+        }
+
+        if (m.usbDataSupported) {
+            body.addView(ui.divider(), ui.lp(top = 8))
+            body.addView(onOffRow("USB for charging only",
+                "Blocks data over the USB port, so a plugged-in computer, charger or cable can't reach the tablet. Also " +
+                    "stops file transfer, the setup tool and the scan script: switch it off before using them.",
+                Store.S_USB_CHARGE_ONLY, m.on(Store.S_USB_CHARGE_ONLY)), ui.lp(top = 8))
         }
 
         body.addView(keyboardSection(m), ui.lp(top = 0))
@@ -931,7 +949,7 @@ class MainActivity : Activity() {
         }
 
         val count = listOf(Store.S_BACKUP_OFF, Store.S_NO_AI_CAPTURE, Store.S_NO_NEW_USERS, Store.S_APPROVE_INPUT,
-            Store.S_REDACT_LOCKSCREEN, Store.S_NO_DEBUGGING).count { m.on(it) } + (if (dns != "off") 1 else 0) + (if (vpn.isNotEmpty()) 1 else 0)
+            Store.S_REDACT_LOCKSCREEN, Store.S_NO_DEBUGGING, Store.S_NO_SMART_LOCK, Store.S_USB_CHARGE_ONLY).count { m.on(it) } + (if (dns != "off") 1 else 0) + (if (vpn.isNotEmpty()) 1 else 0)
         return section("privacy", "Privacy and security", "$count of 8 on", null, emptyList(), extra = body)
     }
 
