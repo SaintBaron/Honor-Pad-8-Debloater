@@ -125,6 +125,7 @@ object Notifier {
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setAutoCancel(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)   // no package names on the lock screen
             .build()
         try {
             nm.notify(1, n)

@@ -48,7 +48,7 @@ class MainActivity : Activity() {
         root.addView(blockEdit)
 
         root.addView(heading("Lock permissions off"))
-        root.addView(note("For apps Honor won't let you hide. Their runtime permissions are denied and can't be re-granted."))
+        root.addView(note("For apps you can't or don't want to hide, such as HONOR ID. Their runtime permissions are denied and can't be re-granted."))
         lockEdit = editor(4)
         root.addView(lockEdit)
 
@@ -97,8 +97,8 @@ class MainActivity : Activity() {
             "Device owner: yes\nEnforcing ${Store.parse(blockEdit.text.toString()).size} hidden, " +
                 "${Store.parse(lockEdit.text.toString()).size} permission-locked. Runs at boot and every 6 hours."
         } else {
-            "Device owner: NO, nothing is enforced.\nRemove all accounts from the tablet, then from a PC run:\n" +
-                "adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver"
+            "Device owner: NO, nothing is enforced.\nRun the Honor Pad 8 Debloater setup tool on a computer " +
+                "(from the project's Releases page) and follow its steps."
         }
         newView.text = store.readText(Store.NEW).ifBlank { "(none)" }
         logView.text = store.readLog().ifBlank { "(empty)" }

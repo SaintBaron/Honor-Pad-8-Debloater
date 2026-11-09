@@ -37,6 +37,7 @@ class Enforcer(context: Context) {
         val restored: List<String>,
         val fresh: List<String>,
         val lockedPerms: Int,
+        val newlyFailed: List<String> = failed,
     ) {
         fun summary(): String {
             val parts = mutableListOf<String>()
@@ -49,8 +50,9 @@ class Enforcer(context: Context) {
             return if (parts.isEmpty()) "nothing to do" else parts.joinToString("; ")
         }
 
+        /** Worth a notification: something changed. A package that keeps failing is only reported the first time. */
         val notable: Boolean
-            get() = hidden.isNotEmpty() || suspended.isNotEmpty() || failed.isNotEmpty() || fresh.isNotEmpty()
+            get() = hidden.isNotEmpty() || suspended.isNotEmpty() || newlyFailed.isNotEmpty() || fresh.isNotEmpty()
     }
 
     // ---------------------------------------------------------------- packages
@@ -168,6 +170,11 @@ class Enforcer(context: Context) {
             store.log("[$trigger] not device owner, nothing enforced")
             return null
         }
+        try {
+            mergeNewDefaults()
+        } catch (e: Exception) {
+            store.log("couldn't merge new defaults (carrying on): ${e.message}")
+        }
         val prot = protectedSet()
         val apps = allApps()
         val wanted = store.readList(Store.BLOCK).filterNot { isProtected(it, prot) }.toSet()
@@ -260,7 +267,10 @@ class Enforcer(context: Context) {
             fresh.forEach { store.log("NEW package: $it") }
         }
 
-        val report = Report(hid, susp, failed, restored, fresh, lockedPerms)
+        val previouslyFailed = store.readSet(Store.FAILED)
+        val newlyFailed = failed.filter { it !in previouslyFailed }
+        store.writeSet(Store.FAILED, failed.toSet())
+        val report = Report(hid, susp, failed, restored, fresh, lockedPerms, newlyFailed)
         store.log("[$trigger] ${report.summary()}")
         if (report.notable) Notifier.show(ctx, "Honor Pad 8 Debloater", report.summary())
         return report
@@ -287,6 +297,39 @@ class Enforcer(context: Context) {
         store.writeSet(Store.BASELINE, store.readSet(Store.BASELINE) + apps.keys)
         store.log("snapshot: added ${added.size} package(s) to the list")
         return added.size
+    }
+
+    /**
+     * When an app update ships new entries in the default list, add them to this device's list.
+     * Each default is only ever offered once, so anything you deliberately removed stays removed.
+     */
+    private fun mergeNewDefaults() {
+        val shipped = try {
+            Store.parse(ctx.assets.open(Store.BLOCK).bufferedReader().use { it.readText() })
+        } catch (e: Exception) {
+            return
+        }
+        if (shipped.isEmpty()) return
+        val seen = store.readSet(Store.DEFAULTS_SEEN)
+        if (seen.isEmpty()) {
+            // First run (or first run of a version with this feature): today's defaults count as offered.
+            store.readList(Store.BLOCK)   // seeds the list from the defaults on a fresh install
+            store.writeSet(Store.DEFAULTS_SEEN, shipped.toSet())
+            return
+        }
+        val fresh = shipped.filter { it !in seen }
+        if (fresh.isEmpty()) return
+        val current = store.readList(Store.BLOCK).toSet()
+        val toAdd = fresh.filter { it !in current }
+        if (toAdd.isNotEmpty()) {
+            val raw = store.readRaw(Store.BLOCK).trimEnd()
+            store.writeRaw(
+                Store.BLOCK,
+                "$raw\n\n# added by an app update ${Store.now()}\n${toAdd.joinToString("\n")}\n"
+            )
+            store.log("app update added ${toAdd.size} new default(s) to the list: ${toAdd.joinToString()}")
+        }
+        store.writeSet(Store.DEFAULTS_SEEN, seen + fresh)
     }
 
     /** Stop the user force-stopping the app or clearing its data (which would wipe its records). */

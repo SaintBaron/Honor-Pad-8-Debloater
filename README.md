@@ -8,6 +8,9 @@ companies to manage work devices. That role lets it hide preinstalled apps, bloc
 lock permissions off for the ones you can't remove at all. It re-applies all of this by itself, at every
 boot and every 6 hours.
 
+**To set it up, you use the setup tool**: a step-by-step program for Windows, macOS and Linux that installs
+everything it needs, talks you through each step, checks each one worked, and later updates the app for you.
+
 *Not affiliated with, endorsed by or connected to HONOR Device Co., Ltd. Use at your own risk.*
 
 ---
@@ -18,14 +21,15 @@ boot and every 6 hours.
 2. [How it works](#how-it-works)
 3. [What it can't do](#what-it-cant-do)
 4. [Before you start](#before-you-start)
-5. [Setting it up](#setting-it-up)
+5. [Setting it up with the setup tool](#setting-it-up-with-the-setup-tool)
 6. [Using the app](#using-the-app)
 7. [The lists](#the-lists)
 8. [Updating, and removing it](#updating-and-removing-it)
 9. [Security and privacy](#security-and-privacy)
-10. [Building it yourself](#building-it-yourself)
-11. [Troubleshooting](#troubleshooting)
-12. [Project layout](#project-layout)
+10. [Setting it up by hand (advanced)](#setting-it-up-by-hand-advanced)
+11. [Building it yourself](#building-it-yourself)
+12. [Troubleshooting](#troubleshooting)
+13. [Project layout](#project-layout)
 
 ---
 
@@ -99,8 +103,10 @@ Some packages are **never** hidden, whatever the list says:
 
 - **It doesn't delete anything from the system partition.** Without root nothing can; the files stay there and use storage.
   Hidden apps take no RAM or CPU and can't run.
-- **It can't hide HONOR ID.** HONOR protects it. It can lock all of HONOR ID's runtime permissions off. Pair that with not
-  signing in to an HONOR ID, and with a firewall such as RethinkDNS, to block its network access.
+- **HONOR ID isn't hidden by default.** HONOR blocks uninstalling, disabling and suspending it with adb, and hiding it
+  hasn't been tested, so by default the app locks all of its runtime permissions off instead. You can try adding
+  `com.hihonor.id` to *Keep hidden*: if HONOR refuses, the app reports it once and keeps its permissions locked. Pair this with
+  not signing in to an HONOR ID, and with a firewall such as RethinkDNS to block its network access.
 - **It doesn't block network traffic.** It has no internet permission at all, so it can't act as a firewall. Use
   Private DNS or RethinkDNS alongside it for that.
 - **It survives updates, not factory resets.** A factory reset removes the app and its device-owner role. Set it up again
@@ -114,81 +120,52 @@ Some packages are **never** hidden, whatever the list says:
 You need:
 
 - **An Honor Pad 8** (or another Android 10+ device; the default lists are tuned for the Pad 8).
-- **A PC with `adb`** and a USB cable. Installing adb:
-  - Arch / CachyOS: `sudo pacman -S android-tools`
-  - Debian / Ubuntu: `sudo apt install adb`
-  - Windows / macOS: Google's [SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools)
-- **Five minutes without your accounts.** Android only lets an app become device owner while no accounts are signed in.
-  You remove them, run one command, and sign straight back in. Nothing is wiped: your Google data stays on Google's servers
-  and syncs back, and your installed apps stay installed.
+- **A Windows, Mac or Linux computer** and a USB cable that carries data (some cables only charge).
+- **About 10 minutes.**
+- **To sign out of your accounts on the tablet for a few minutes.** Android only lets an app become device owner while no
+  accounts are signed in. You remove them, the tool does its part, and you sign straight back in. Nothing is wiped: your
+  Google data stays on Google's servers and syncs back, and your installed apps stay installed.
 
-The app itself is on this repository's **Releases** page, in the release called *latest*: `honor-pad-8-debloater.apk`.
-Step 3 below downloads it for you.
+## Setting it up with the setup tool
 
-## Setting it up
+### 1. Get the tool
 
-The commands below work in bash, zsh and fish. On Windows, use PowerShell and adjust the download folder.
+Open this repository's **Releases** page and download the setup tool for your computer from the newest release:
 
-1. **Turn on USB debugging on the tablet.** Go to **Settings → About tablet** and tap **Build number** 7 times, then
-   **Settings → System & updates → Developer options** and turn on **USB debugging**.
-2. **Connect the tablet** to the PC with USB and check adb can see it:
-   ```sh
-   adb devices
-   ```
-   Accept the *Allow USB debugging?* prompt on the tablet. The tablet should then be listed as `device`.
-3. **Download the app** to your Downloads folder:
-   ```sh
-   curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/download/latest/honor-pad-8-debloater.apk
-   ```
-   Replace `<owner>/<repo>` with this repository's path, as shown at the top of its GitHub page. You can also download
-   `honor-pad-8-debloater.apk` from the **Releases** page in your browser.
-4. **Install it:**
-   ```sh
-   adb install -r ~/Downloads/honor-pad-8-debloater.apk
-   ```
-   It should end with `Success`. If you get `failed to stat … No such file or directory`, the path is wrong: check the file
-   is in your Downloads folder and that you typed the full path.
-5. **Remove every account from the tablet.** Go to **Settings → Users & accounts**, tap each account (Google included), then
-   **Remove account**. Then check from the PC:
-   ```sh
-   adb shell pm list users
-   adb shell dumpsys account | grep -E 'Accounts:|Account \{'
-   ```
-   The first must list only `UserInfo{0:...}`. The second must show `Accounts: 0`, and no `Account {` lines.
-6. **Make it device owner:**
-   ```sh
-   adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
-   ```
-   You should see `Success: Device owner set`.
-7. **Sign back in** to your Google account and anything else in **Settings → Users & accounts**.
-8. **Open Honor Pad 8 Debloater** on the tablet. The top should say **Device owner: yes**. Tap **Snapshot removed apps**,
-   which adds anything you already removed with adb to its list, then **Enforce now**.
-9. **Let HONOR's battery manager allow it.** Go to **Settings → Battery → App launch → Honor Pad 8 Debloater**, turn off
-   *Manage automatically*, and turn on **all three** switches (auto-launch, secondary launch, run in background).
-   Without this, HONOR may stop it running at boot.
-10. **Check it runs at boot:**
-    ```sh
-    adb reboot
-    ```
-    Once the tablet has restarted, open the app. The log should have a fresh `[boot]` line at the top.
+| Your computer | File | How to open it |
+|---|---|---|
+| **Windows** | `HonorPad8Debloater-Setup-Windows.exe` | Double-click it. Windows may say *"Windows protected your PC"* because the tool isn't code-signed: click **More info → Run anyway**. |
+| **Mac** (Apple silicon) | `HonorPad8Debloater-Setup-macOS.zip` | Unzip it and open the app. macOS will block it the first time because it isn't notarised: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. |
+| **Linux** | `HonorPad8Debloater-Setup-Linux` | Make it runnable, then run it: `chmod +x HonorPad8Debloater-Setup-Linux && ./HonorPad8Debloater-Setup-Linux` |
 
-That's it. It now looks after itself, and you can turn USB debugging off again if you like.
+**Prefer to run it from source?** It's one Python file with no third-party dependencies, and works with Python 3.8 or newer
+on any of the three systems (including Intel Macs):
 
-### No PC? Do it on the tablet
+```sh
+python3 tool/debloater_setup.py
+```
 
-The same commands can run on the tablet itself, using Android's **Wireless debugging** (Android 11+) and the free apps
-**Shizuku** and **aShell**:
+On Arch, Python's window toolkit is a separate package. If it's missing, the tool tells you and offers to run
+`sudo pacman -S --needed tk` for you. On a Mac, use Python from [python.org](https://www.python.org/downloads/), which includes it.
 
-1. Install Shizuku and aShell, and install `honor-pad-8-debloater.apk` from the Releases page in your browser.
-2. Turn on **Developer options → Wireless debugging**, then start Shizuku with *Start via Wireless debugging* and follow its
-   pairing steps.
-3. Remove all accounts (step 5 above). In aShell, run the two commands from steps 5 and 6 without the `adb shell` part:
-   ```sh
-   dumpsys account | grep -E 'Accounts:|Account \{'
-   dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
-   ```
-4. Carry on from step 7. Afterwards you can uninstall Shizuku and aShell and turn Wireless debugging off; the debloater
-   doesn't need them.
+### 2. Follow the steps
+
+The tool has nine steps. It checks each one has really worked before it lets you continue, and explains what to do if
+something goes wrong. **Show details** at the bottom shows exactly what it's doing.
+
+| Step | What happens |
+|---|---|
+| 1. Welcome | What's about to happen, and what you need. |
+| 2. Get the tools | Finds `adb` (Android's official debugging tool) or downloads Google's copy into the tool's own folder. No admin rights needed. On Arch it can install `android-tools` with pacman instead. |
+| 3. Prepare the tablet | Shows you how to turn on **USB debugging** on the tablet, step by step. |
+| 4. Connect the tablet | Watches for the tablet and tells you what to do: accept the *Allow USB debugging?* prompt, try another cable, or, on Linux, install Android's USB rules (it offers to do this for you). |
+| 5. Get the app | Downloads the newest app from the Releases page and **checks it's signed with this project's key**. A file signed by anyone else is deleted and never installed. |
+| 6. Install the app | Installs it, or updates the copy that's already there. **Watch the tablet**: HONOR asks you to confirm apps installed over USB. |
+| 7. Remove accounts | Shows which accounts are still signed in (only their type, such as "Google account", never the address) and updates by itself as you remove them. Skipped if the app is already set up. |
+| 8. Make it device owner | Runs the one command that gives the app its powers. Skipped if it's already set up. |
+| 9. Finish on the tablet | Sign back in; open the app and tap **Snapshot removed apps**, then **Enforce now**; allow it in HONOR's battery settings. Each has a button that opens the right screen on the tablet. |
+
+That's it. The app now looks after itself. You can turn USB debugging off again.
 
 ## Using the app
 
@@ -236,7 +213,7 @@ Some side effects to be aware of:
 
 ### Lock permissions off: defaults (`app/src/main/assets/lockdown.txt`)
 
-Just `com.hihonor.id` (HONOR ID), which HONOR won't let anything hide or remove.
+Just `com.hihonor.id` (HONOR ID), which HONOR won't let you uninstall or disable (see [What it can't do](#what-it-cant-do)).
 
 ### What not to add
 
@@ -248,15 +225,26 @@ looking them up. Hiding a package the system depends on can break features. Undo
 
 ### Updating
 
-New builds appear on the Releases page. Updates must be signed with the same key, which GitHub Actions does
-automatically. Download the new build and install it over the top:
+Every change to this project publishes a new numbered release (`v1.0.N`). There are three ways to update the app on your
+tablet. Updates keep your lists and settings, and you **don't** need to remove your accounts again.
 
-```sh
-curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/download/latest/honor-pad-8-debloater.apk
-adb install -r ~/Downloads/honor-pad-8-debloater.apk
-```
+1. **With the setup tool (easiest).** Run it again and follow the steps. It sees the app is already set up, downloads and
+   verifies the newest version, installs it, and skips everything else. It also tells you if there's a newer version of
+   the tool itself.
+2. **On the tablet with Obtainium.** [Obtainium](https://github.com/ImranR98/Obtainium) is a free app that watches GitHub
+   releases and offers updates, so the debloater itself never needs internet access. Install Obtainium, tap **Add app**,
+   paste this repository's address, and it will notify you of new versions. Each update asks you to confirm it.
+3. **By hand:**
+   ```sh
+   curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/latest/download/honor-pad-8-debloater.apk
+   adb install -r ~/Downloads/honor-pad-8-debloater.apk
+   ```
 
-Or open the APK on the tablet, if you allow your file manager or browser to install apps. Your lists and settings are kept.
+Android only installs an update signed with the same key as the installed app, whichever way you choose.
+
+If an update adds new apps to the default *Keep hidden* list, they're added to your list automatically the first time the
+updated app runs, and noted in its log. Each default is only ever added once, so an app you deliberately removed from your
+list stays removed.
 
 ### Removing it
 
@@ -292,6 +280,26 @@ A factory reset also removes it completely.
 - **Self-protection.** On Android 11+ it can't be force-stopped or have its data cleared from Settings while it's device
   owner. A device-owner app can't be uninstalled or disabled until it's released.
 
+### The setup tool
+
+- **Fully verifies every download, the same way Android does.** It checks the APK's RSA signature, checks that the signed
+  digest matches every byte of the file, and checks the signing certificate's SHA-256 against
+  [`tool/trusted_signer.sha256`](tool/trusted_signer.sha256), which is built into every copy of the tool. If anything is off,
+  even one changed byte, the file is deleted and nothing is installed. It checks again immediately before installing. A copy
+  of the tool without that fingerprint file refuses to install anything. The build also refuses to publish an APK whose key
+  doesn't match the file.
+- **Only uses HTTPS**, refuses to follow a redirect to plain HTTP, and caps download sizes. It only talks to GitHub (to find
+  and download the newest release) and Google (`dl.google.com`, to download `adb` if you don't have it). It sends nothing
+  about you or your tablet anywhere.
+- **Won't run a planted program.** It only looks for `adb` and other programs in your system's `PATH` and its own folder,
+  never in the current folder (where Windows would otherwise look first).
+- **Keeps nothing personal.** It never records account names, and it never logs the output of the account check. It stores
+  only the downloaded files and a small settings file in its own folder.
+- **Asks before changing your computer.** It only installs system packages (adb or USB rules on Linux) when you click the
+  button, through your system's own password prompt.
+- **No third-party code.** It only uses Python's standard library. The packaged versions also include `certifi`, Mozilla's
+  list of trusted website certificates.
+
 ### The signing key is what matters
 
 Whoever controls the signing key and this repository can produce an update the tablet will accept. So:
@@ -300,8 +308,9 @@ Whoever controls the signing key and this repository can produce an update the t
   Never commit it.
 - The build runs **only** when the owner pushes to `main` or starts it by hand. There's no `pull_request` trigger, so
   forks and pull requests can never reach the secrets.
-- Third-party build steps are **pinned to exact commit hashes**, so a hijacked upstream release can't inject code into the
-  build.
+- Third-party build steps are **pinned to exact commit hashes**, and every Python package used to package the setup tool is
+  **pinned to an exact version and file hash** ([`tool/requirements-build.txt`](tool/requirements-build.txt)), so a hijacked
+  upstream release can't inject code into the build or into the tool people download.
 - The workflow's GitHub token only has `contents: write` (to publish the release). Checkout credentials aren't kept on disk,
   and the decoded key is deleted at the end of the job.
 - **Protect your GitHub account with two-factor authentication**, and don't give anyone else write access to the repository.
@@ -311,9 +320,79 @@ Whoever controls the signing key and this repository can produce an update the t
 Open an issue. For anything security-sensitive, don't post details publicly. Use GitHub's
 **Security → Report a vulnerability** on this repository instead.
 
+## Setting it up by hand (advanced)
+
+The setup tool does all of this for you. These are the same steps as raw commands, for anyone who prefers a terminal.
+You need `adb`: `sudo pacman -S android-tools` on Arch, `sudo apt install adb` on Debian/Ubuntu, or Google's
+[SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) on Windows and macOS.
+
+The commands below work in bash, zsh and fish. On Windows, use PowerShell and adjust the download folder.
+
+1. **Turn on USB debugging on the tablet.** Go to **Settings → About tablet** and tap **Build number** 7 times, then
+   **Settings → System & updates → Developer options** and turn on **USB debugging**.
+2. **Connect the tablet** to the PC with USB and check adb can see it:
+   ```sh
+   adb devices
+   ```
+   Accept the *Allow USB debugging?* prompt on the tablet. The tablet should then be listed as `device`.
+3. **Download the app** to your Downloads folder:
+   ```sh
+   curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/latest/download/honor-pad-8-debloater.apk
+   ```
+   Replace `<owner>/<repo>` with this repository's path, as shown at the top of its GitHub page. You can also download
+   `honor-pad-8-debloater.apk` from the **Releases** page in your browser.
+4. **Install it:**
+   ```sh
+   adb install -r ~/Downloads/honor-pad-8-debloater.apk
+   ```
+   It should end with `Success`. If you get `failed to stat … No such file or directory`, the path is wrong: check the file
+   is in your Downloads folder and that you typed the full path.
+5. **Remove every account from the tablet.** Go to **Settings → Users & accounts**, tap each account (Google included), then
+   **Remove account**. Then check from the PC:
+   ```sh
+   adb shell pm list users
+   adb shell dumpsys account | grep -E 'Accounts:|Account \{'
+   ```
+   The first must list only `UserInfo{0:...}`. The second must show `Accounts: 0`, and no `Account {` lines.
+6. **Make it device owner:**
+   ```sh
+   adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
+   ```
+   You should see `Success: Device owner set`.
+7. **Sign back in** to your Google account and anything else in **Settings → Users & accounts**.
+8. **Open Honor Pad 8 Debloater** on the tablet. The top should say **Device owner: yes**. Tap **Snapshot removed apps**,
+   which adds anything you already removed with adb to its list, then **Enforce now**.
+9. **Let HONOR's battery manager allow it.** Go to **Settings → Battery → App launch → Honor Pad 8 Debloater**, turn off
+   *Manage automatically*, and turn on **all three** switches (auto-launch, secondary launch, run in background).
+   Without this, HONOR may stop it running at boot.
+10. **Check it runs at boot:**
+    ```sh
+    adb reboot
+    ```
+    Once the tablet has restarted, open the app. The log should have a fresh `[boot]` line at the top.
+
+That's it. It now looks after itself, and you can turn USB debugging off again if you like.
+
+### No computer? Do it on the tablet
+
+The same commands can run on the tablet itself, using Android's **Wireless debugging** (Android 11+) and the free apps
+**Shizuku** and **aShell**:
+
+1. Install Shizuku and aShell, and install `honor-pad-8-debloater.apk` from the Releases page in your browser.
+2. Turn on **Developer options → Wireless debugging**, then start Shizuku with *Start via Wireless debugging* and follow its
+   pairing steps.
+3. Remove all accounts (step 5 above). In aShell, run the two commands from steps 5 and 6 without the `adb shell` part:
+   ```sh
+   dumpsys account | grep -E 'Accounts:|Account \{'
+   dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
+   ```
+4. Carry on from step 7. Afterwards you can uninstall Shizuku and aShell and turn Wireless debugging off; the debloater
+   doesn't need them.
+
 ## Building it yourself
 
-GitHub Actions builds a signed APK on every push to `main` and publishes it as the `latest` release. To build your own copy (for example in a fork):
+GitHub Actions builds the signed APK and packages the setup tool for Windows, macOS and Linux on every push to `main`,
+then publishes them all as a numbered release (`v1.0.N`) with a `SHA256SUMS.txt` checksum file. To build your own copy (for example in a fork):
 
 1. **Make a signing key** (needs a JDK for `keytool`):
    ```sh
@@ -329,9 +408,18 @@ GitHub Actions builds a signed APK on every push to `main` and publishes it as t
    | `DEBLOATER_KEYSTORE_B64` | the keystore as one line of base64: `base64 -w0 debloater.jks` |
    | `DEBLOATER_KEYSTORE_PASSWORD` | the keystore password (the key alias must be `debloater`) |
 
-3. **Run the build:** **Actions → build → Run workflow**. Download the files from **Releases → latest**.
+3. **Put your key's fingerprint in `tool/trusted_signer.sha256`**, so the setup tool trusts your builds and no one else's:
+   ```sh
+   keytool -exportcert -keystore debloater.jks -alias debloater -file cert.der
+   sha256sum cert.der | cut -d' ' -f1 > tool/trusted_signer.sha256
+   ```
+   The build checks this matches the key in your secrets and stops if it doesn't.
+4. **Run the build:** **Actions → build → Run workflow**. Download the files from **Releases → latest**.
 
 Without the secrets the build still succeeds, but it's signed with a throwaway key. Don't install that build.
+
+**Don't rename the workflow file or recreate the repository.** Version numbers come from the workflow's run counter, which
+starts again from 1 if you do. Android would then see newer builds as older versions and refuse to install them as updates.
 
 **Checking a build** (optional; needs Android build-tools): confirm the APK's certificate matches your key:
 
@@ -361,7 +449,7 @@ Accounts Settings doesn't show disappear when you remove the app that created th
 Remove extra users, guest users and HONOR's *App Twin* in Settings, then check `adb shell pm list users` shows only user 0.
 
 **It doesn't seem to run after a reboot.**
-Redo step 9 of [Setting it up](#setting-it-up) (HONOR's **App launch** settings). Then reboot and check the log for a `[boot]` line.
+Redo the last step of the [setup tool](#setting-it-up-with-the-setup-tool) (HONOR's **App launch** settings). Then reboot and check the log for a `[boot]` line.
 
 **The log says `couldn't block` for an app.**
 HONOR protects that app against both hiding and suspending. Its permissions are locked off instead. Block its network
@@ -380,11 +468,24 @@ adb can't find the APK at the path you gave. Use the full path, for example `~/D
 the file is really there with `ls ~/Downloads/*.apk`.
 
 **`Unknown admin: ComponentInfo{app.honorpad8.debloater/...}`.**
-The app isn't installed, usually because the install step failed. Run step 4 again and make sure it says `Success`.
+The app isn't installed, usually because the install step failed. Install it again (step 6 in the setup tool, or step 4 of
+[Setting it up by hand](#setting-it-up-by-hand-advanced)) and make sure it says `Success`.
 
 **`adb devices` shows `unauthorized` or nothing.**
 Unlock the tablet and accept the *Allow USB debugging?* prompt. If no prompt appears, unplug, turn USB debugging off and on
 again, and reconnect. Try another cable if needed: some are charge-only.
+
+**The setup tool can't find the tablet on Windows.**
+Windows may need a USB driver for the tablet. Open **Device Manager**: if the tablet is listed with a warning sign,
+right-click it, choose **Update driver → Search automatically**. HONOR's driver also comes with its HiSuite app.
+
+**The setup tool says "this file isn't signed with the project's official key".**
+Something other than this project's official build was downloaded, so it was deleted and nothing was installed. Try again
+later. If it keeps happening, open an issue.
+
+**"Couldn't check GitHub" or a certificate error on a Mac.**
+If you're running the tool from source with Python from python.org, run **Install Certificates.command** from the Python
+folder in Applications, then try again.
 
 **I want everything back the way it was.**
 **Release device owner** in the app, then uninstall it. Apps you removed with adb *before* installing it stay removed;
@@ -393,7 +494,7 @@ bring those back with `adb shell cmd package install-existing <package>`, or by 
 ## Project layout
 
 ```
-.github/workflows/build.yml       CI: builds, signs and publishes the release
+.github/workflows/build.yml       CI: builds and signs the app, packages the tool per OS, publishes the release
 app/src/main/AndroidManifest.xml  permissions and components
 app/src/main/assets/              default lists (blocklist.txt, lockdown.txt)
 app/src/main/java/app/honorpad8/debloater/
@@ -402,6 +503,9 @@ app/src/main/java/app/honorpad8/debloater/
   Receivers.kt                    device-admin receiver, boot receiver, scheduled job, notifications
   MainActivity.kt                 the app's screen
 app/src/main/res/                 icon, device-admin policy, backup exclusion rules
+tool/debloater_setup.py           the setup and update tool (Python, standard library only)
+tool/trusted_signer.sha256        fingerprint of the official signing key the tool checks downloads against
+tool/requirements-build.txt       exact, hash-pinned packages used to package the tool (not needed to run it)
 ```
 
 ## Licence

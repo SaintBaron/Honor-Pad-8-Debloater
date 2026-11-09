@@ -15,8 +15,10 @@
         android:label="Honor Pad 8 Debloater"
         android:theme="@android:style/Theme.DeviceDefault">
 
+        <!-- configChanges: rotating the tablet mustn't recreate the screen and lose unsaved list edits. -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode|density"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

@@ -86,6 +86,8 @@ class Store(private val ctx: Context) {
         const val MANAGED = "managed.txt"     // packages this app has hidden or suspended
         const val LOCKED = "locked.txt"       // packages this app has locked permissions on
         const val NEW = "new.txt"             // system packages that appeared after the baseline
+        const val DEFAULTS_SEEN = "defaults_seen.txt" // default-list entries already offered to this device
+        const val FAILED = "failed.txt"       // packages that couldn't be blocked (already reported once)
         const val LOG = "log.txt"
 
         private val LOCK = Any()
