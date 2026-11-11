@@ -182,6 +182,7 @@ class Store(private val ctx: Context) {
         const val S_HOME = "home_locked_to"
         const val S_SELF_AUTO = "self_auto_update"
         const val S_NO_SMART_LOCK = "no_smart_lock"
+        const val S_HONOR_HOME_FIXED = "honor_home_gestures_fixed"
         const val S_USB_CHARGE_ONLY = "usb_charge_only"
         const val S_HELI_AUTO = "heliboard_auto_update"
         const val S_HELI_TAG = "heliboard_last_release"

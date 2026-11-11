@@ -718,11 +718,10 @@ class MainActivity : Activity() {
         card.addView(ui.text("Replace HONOR's home screen and keyboard?", 16f, bold = true))
         card.addView(ui.muted("Installs Lawnchair (a clean home screen) and HeliBoard (a keyboard with no internet access) " +
             "from their official GitHub pages, checks each is signed with its project's key, and makes them the home " +
-            "screen and keyboard. Then SwiftKey is removed and HONOR Home is hidden. You can undo any of it later."),
+            "screen and keyboard. Then SwiftKey is removed. You can undo any of it later."),
             ui.lp(top = 4))
-        card.addView(ui.muted("On MagicUI, HONOR Home also runs the Recents screen and swipe gestures. If those stop " +
-            "working afterwards, open HONOR apps here and choose Leave for HONOR Home.", 12f).apply { setTextColor(ui.pal.warn) },
-            ui.lp(top = 6))
+        card.addView(ui.muted("HONOR Home stays installed in the background: on this tablet it runs the swipe " +
+            "gestures and Recents, even with Lawnchair as the home screen.", 12f), ui.lp(top = 6))
         val row = ui.horizontal()
         row.addView(ui.button("Yes, replace them", Ui.Kind.PRIMARY) { replaceNow() })
         row.addView(View(this), LinearLayout.LayoutParams(ui.dp(8), 1))
@@ -840,7 +839,7 @@ class MainActivity : Activity() {
         if (!done) {
             body.addView(ui.divider(), ui.lp(top = 12))
             body.addView(ui.muted("Or do it all in one go: install both, make them the home screen and keyboard, remove " +
-                "SwiftKey and hide HONOR Home.", 12f), ui.lp(top = 10))
+                "SwiftKey.", 12f), ui.lp(top = 10))
             body.addView(ui.button("Replace home screen and keyboard", Ui.Kind.SECONDARY) { replaceNow() }, ui.lp(WRAP, top = 6))
         }
 

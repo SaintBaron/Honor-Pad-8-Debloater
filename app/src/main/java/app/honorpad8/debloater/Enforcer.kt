@@ -340,8 +340,8 @@ class Enforcer(context: Context) {
         if (installed(Installer.LAWNCHAIR) { inst.latestLawnchair() }) {
             val r = forceHome(Installer.LAWNCHAIR.pkg)
             if (store.setting(Store.S_HOME, "") == Installer.LAWNCHAIR.pkg) {
-                out += "Lawnchair is now the home screen."
-                synchronized(LOCK) { store.setChoice(HONOR_HOME, Catalogue.Choice.HIDE, "HONOR Home") }
+                out += "Lawnchair is now the home screen. HONOR Home stays installed in the background: on this " +
+                    "tablet it runs the swipe gestures and Recents."
             } else out += r
         }
         if (installed(Installer.HELIBOARD) { inst.latestHeliboard() }) {
@@ -349,8 +349,7 @@ class Enforcer(context: Context) {
             synchronized(LOCK) { for (p in SWIFTKEY) store.setChoice(p, Catalogue.Choice.REMOVE, null) }
         }
         enforce("replaced home screen and keyboard", notify = false)
-        val st = states(listOf(HONOR_HOME) + SWIFTKEY)
-        if (st[HONOR_HOME]?.hidden == true) out += "HONOR Home is hidden."
+        val st = states(SWIFTKEY)
         val sk = st[SWIFTKEY[0]]
         if (sk != null && sk.present && (sk.hidden || !sk.installed)) out += "SwiftKey is removed."
         else if (sk?.present == true && defaultIme() == SWIFTKEY[0]) out += "SwiftKey stays until you switch keyboard."
@@ -427,6 +426,7 @@ class Enforcer(context: Context) {
         } catch (e: Exception) {
             store.log("couldn't merge new defaults (carrying on): ${e.message}")
         }
+        restoreHonorHomeOnce()
         // Never leave the tablet without a home screen: unless some home screen app is off the lists,
         // every home screen app (and HONOR's own) is kept, and HONOR's comes back if it was hidden.
         val listed = (store.readList(Store.BLOCK) + store.readList(Store.REMOVE)).toSet()
@@ -752,6 +752,22 @@ class Enforcer(context: Context) {
      * if you haven't changed that app yourself, so your own choices always stay.
      * defaults_seen.txt records "package=choice" for what was last offered (a bare name means hide).
      */
+    /**
+     * Earlier versions hid HONOR Home when replacing the home screen with Lawnchair. On this tablet that breaks
+     * swipe gestures and Recents (they live in HONOR's launcher), so put it back once. Choosing Hide again later
+     * is respected.
+     */
+    private fun restoreHonorHomeOnce() {
+        if (store.setting(Store.S_HONOR_HOME_FIXED, "") == "yes") return
+        store.setSetting(Store.S_HONOR_HOME_FIXED, "yes")
+        // Only where the old "replace home screen and keyboard" step ran (that's what hid it); a choice made by
+        // hand on a new install is left alone.
+        if (store.setting(Store.S_REPLACE_OFFER, "") == "yes" && store.choiceOf(HONOR_HOME) != Catalogue.Choice.LEAVE) {
+            store.setChoice(HONOR_HOME, Catalogue.Choice.LEAVE, "HONOR Home")
+            store.log("HONOR Home set back to Leave: hiding it breaks swipe gestures and Recents on this tablet")
+        }
+    }
+
     private fun mergeNewDefaults() {
         val cat = Catalogue.get(ctx)
         val shipped = cat.defaultChoices()

@@ -53,7 +53,7 @@ com.hihonor.lbs | remove | HONOR location | HONOR's own location service. Check 
 com.hihonor.trustcircle | remove | Trusted circle | Device-trust service used by Find Device.
 
 == honor-apps | hide | HONOR apps | Apps you can replace with your own choice.
-com.hihonor.android.launcher | leave | HONOR Home | HONOR's home screen. It stays while it's your home screen, so make Lawnchair the home screen first (under Apps). On MagicUI it also runs Recents and swipe gestures: if those stop working, choose Leave.
+com.hihonor.android.launcher | leave | HONOR Home | HONOR's home screen. Leave it: on this tablet it also runs the swipe-up gestures and Recents, so hiding it breaks them even with Lawnchair as the home screen. Lawnchair can be your home screen with this left alone.
 com.hihonor.phoneservice | remove | My HONOR | Support, offers and account app.
 com.hihonor.tips | remove | Tips | Feature tips and notifications about them.
 com.hihonor.android.totemweather | remove | Weather | HONOR Weather and its widget.

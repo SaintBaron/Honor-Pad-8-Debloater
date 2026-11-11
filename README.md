@@ -263,13 +263,14 @@ to replace HONOR's home screen and keyboard. **Yes, replace them** does all of t
 2. Makes Lawnchair the home screen, locked so HONOR can't switch it back.
 3. Allows HeliBoard as a keyboard and makes it the keyboard in use. If Android also wants it switched on in Keyboard
    settings, the result says so and has a button that opens them.
-4. Sets SwiftKey to **Remove** and HONOR Home to **Hide**, and applies them.
+4. Sets SwiftKey to **Remove** and applies it. HONOR Home stays (see below).
 
 **No thanks** hides the offer; **Replace home screen and keyboard** in the Apps card does the same later. To undo any
-part: choose **Leave** for HONOR Home or SwiftKey, **Stop locking the home screen**, or switch keyboard.
+part: choose **Leave** for SwiftKey, **Stop locking the home screen**, or switch keyboard.
 
-On MagicUI, HONOR Home may also run the Recents screen and the swipe-up gestures. If those stop working once it's
-hidden, choose **Leave** for HONOR Home (under HONOR apps): Lawnchair stays the home screen either way.
+**HONOR Home stays installed.** On this tablet it also runs the swipe-up gestures and the Recents screen, and hiding it
+breaks them even with Lawnchair as the home screen (confirmed on a real tablet). With Lawnchair locked as the home screen,
+HONOR Home only works in the background. Earlier versions hid it; updating sets it back to **Leave** once.
 
 - **F-Droid.** **Install F-Droid** downloads it from f-droid.org and installs it without a prompt, once it's checked.
   F-Droid keeps itself and the apps you get from it up to date.
@@ -421,7 +422,7 @@ Google's setup leftovers: Setup Wizard, Partner Setup, Restore, the search-engin
 
 ### In the app, left alone by default
 
-HONOR Home (until you replace it), HONOR's side dock and floating windows; Chrome, YouTube, Google Photos, Speech Services, the Accessibility Suite;
+HONOR Home (it runs the swipe gestures), HONOR's side dock and floating windows; Chrome, YouTube, Google Photos, Speech Services, the Accessibility Suite;
 the print spooler and print-service finder; the basic screensaver, Dynamic System Updates; and the mobile-network
 parts a Wi-Fi tablet doesn't use (in-call screen, MMS service, opportunistic network service, emergency alerts).
 
@@ -439,10 +440,9 @@ Some side effects to be aware of:
   it's your keyboard**. The easy way to replace it is HeliBoard under **Apps**. With another keyboard: choose **Allow**
   for it under **Approve keyboards and accessibility apps**, then under **Keyboard** (Privacy and security) tap
   **Keyboard settings** to turn it on and **Change keyboard** to switch. SwiftKey is removed as soon as you switch.
-- **HONOR Home (the launcher)** is left alone by default, and stays while it's your home screen. Make Lawnchair the home
-  screen first; then Hide works. On MagicUI it may also run Recents and the swipe-up gestures: if they stop working,
-  choose Leave. If you ever end up with no working home screen, this brings it back from a computer:
-  `adb shell pm unhide com.hihonor.android.launcher`
+- **HONOR Home (the launcher)**: leave it. It also runs the swipe-up gestures and Recents, and hiding it breaks them
+  even with Lawnchair as the home screen. If it ever gets hidden and you can't get around the tablet, this brings it
+  back from a computer: `adb shell pm unhide com.hihonor.android.launcher`
 - **HONOR location**: check a maps app still finds you afterwards. Google's location service takes over.
 - **HONOR Gallery**: install another gallery first (Fossify Gallery or Aves on F-Droid), or the camera's thumbnail has
   nothing to open.
