@@ -19,11 +19,11 @@ val updateSigner = rootProject.file("tool/trusted_signer.sha256").let {
 }
 
 android {
-    namespace = "app.honorpad8.debloater"
+    namespace = "app.honorless.debloater"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "app.honorpad8.debloater"
+        applicationId = "app.honorless.debloater"
         minSdk = 29
         targetSdk = 35
         versionCode = buildNumber

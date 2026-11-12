@@ -1,12 +1,18 @@
-# Honor Pad 8 Debloater
+# Honorless Debloater
 
-Keep an Honor Pad 8 free of preinstalled bloat and vendor telemetry **without root and without unlocking the
-bootloader**, and keep it that way after system updates.
+Keep an HONOR phone or tablet free of preinstalled bloat and vendor telemetry **without root and without unlocking
+the bootloader**, and keep it that way after system updates. It started life as the Honor Pad 8 Debloater, and the
+Honor Pad 8 is still where it's tested.
 
-It's a small Android app that becomes the tablet's **device owner**, a built-in Android role normally used by
+It's a small Android app that becomes the device's **device owner**, a built-in Android role normally used by
 companies to manage work devices. That role lets it hide preinstalled apps, block the ones it can't hide, and
 lock permissions off for the ones you can't remove at all. It re-applies all of this by itself, at every
 boot and every 6 hours.
+
+**Works across HONOR devices.** The defaults are tested on the Honor Pad 8 (HEY-W09, Android 12,
+MagicUI 6.1). The catalogue also covers apps found on other HONOR devices, including older ones that still use
+Huawei's package names, and the app only shows what's actually on yours. See
+[Other HONOR phones and tablets](#other-honor-phones-and-tablets).
 
 **To set it up, you use the setup tool**: a step-by-step program for Windows, macOS and Linux that installs
 everything it needs, talks you through each step, checks each one worked, and later updates the app for you.
@@ -23,7 +29,7 @@ everything it needs, talks you through each step, checks each one worked, and la
 4. [Before you start](#before-you-start)
 5. [Setting it up with the setup tool](#setting-it-up-with-the-setup-tool)
 6. [Using the app](#using-the-app)
-7. [Scanning the tablet for anything else](#scanning-the-tablet-for-anything-else)
+7. [Scanning the device for anything else](#scanning-the-device-for-anything-else)
 8. [The lists](#the-lists)
 9. [Updating, and removing it](#updating-and-removing-it)
 10. [Security and privacy](#security-and-privacy)
@@ -91,7 +97,7 @@ notification about it (two in a row, so a moment without a network at start-up d
 Android's own start-up counter) each time its start-up check runs. If the
 tablet has restarted and the start-up check didn't run (HONOR's start-up manager or battery saving can block it), the
 next check notices, catches up straight away, notifies you once, and the status card says how to allow it:
-**Settings > Battery > App launch > Honor Pad 8 Debloater**, then turn off *Manage automatically* and turn on all three
+**Settings > Battery > App launch > Honorless Debloater**, then turn off *Manage automatically* and turn on all three
 switches. Opening the app after a missed start-up check also catches up. The status card shows how the last restart
 went: checked and everything in place, caught up late, or what wasn't in place.
 
@@ -143,7 +149,7 @@ Some packages are **never** hidden, whatever the list says:
 
 You need:
 
-- **An Honor Pad 8** (or another Android 10+ device; the default lists are tuned for the Pad 8).
+- **An HONOR phone or tablet on Android 10 or newer** (tested on the Honor Pad 8; other Android 10+ devices work, but the lists are made for HONOR).
 - **A Windows, Mac or Linux computer** and a USB cable that carries data (some cables only charge).
 - **About 10 minutes.**
 - **To sign out of your accounts on the tablet for a few minutes.** Android only lets an app become device owner while no
@@ -158,9 +164,13 @@ Open this repository's **Releases** page and download the setup tool for your co
 
 | Your computer | File | How to open it |
 |---|---|---|
-| **Windows** | `HonorPad8Debloater-Setup-Windows.exe` | Double-click it. Windows may say *"Windows protected your PC"* because the tool isn't code-signed: click **More info → Run anyway**. |
-| **Mac** (Apple silicon) | `HonorPad8Debloater-Setup-macOS.zip` | Unzip it and open the app. macOS will block it the first time because it isn't notarised: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. |
-| **Linux** | `HonorPad8Debloater-Setup-Linux` | Make it runnable, then run it: `chmod +x HonorPad8Debloater-Setup-Linux && ./HonorPad8Debloater-Setup-Linux` |
+| **Windows** | `HonorlessDebloater-Setup-Windows.exe` | Double-click it. Windows may say *"Windows protected your PC"* because the tool isn't code-signed: click **More info → Run anyway**. |
+| **Mac** (Apple silicon) | `HonorlessDebloater-Setup-macOS.zip` | Unzip it and open the app. macOS will block it the first time because it isn't notarised: go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. |
+| **Linux** | `HonorlessDebloater-Setup-Linux` | Make it runnable, then run it: `chmod +x HonorlessDebloater-Setup-Linux && ./HonorlessDebloater-Setup-Linux` |
+
+**Coming from the Honor Pad 8 Debloater?** The app now has a new ID (`app.honorless.debloater`), so it installs as a
+separate app and can't update the old one. In the old app, tap **Release device owner** and confirm, then run the new
+setup tool as normal. It spots the old app, waits for you to release it, and uninstalls it for you.
 
 **Prefer to run it from source?** It's one Python file with no third-party dependencies, and works with Python 3.8 or newer
 on any of the three systems (including Intel Macs):
@@ -282,7 +292,7 @@ HONOR Home only works in the background. Earlier versions hid it; updating sets 
   (pre-releases are skipped) from HeliBoard's GitHub page (`HeliBorg/HeliBoard`). **Use it as the keyboard** allows it and switches to it, and
   SwiftKey is then removed. **Update it automatically** (on by default) checks once a day.
 
-- **Honor Pad 8 Debloater.** The app can update itself: **Check for an update** gets the newest release from this
+- **Honorless Debloater.** The app can update itself: **Check for an update** gets the newest release from this
   project's own GitHub Releases page, and **Update it automatically** (on by default) checks once a day. Updating
   closes the app's screen (open it again afterwards); the background checks carry on by themselves and your choices
   are kept. Only a copy built by this
@@ -349,9 +359,9 @@ What else other tools do, and why it isn't here:
 - **Universal Android Debloater, Canta and Hail** remove, disable or hide apps. This project's catalogue and Leave / Hide /
   Remove choices cover the same ground for this tablet, and keep doing it after updates.
 
-## Scanning the tablet for anything else
+## Scanning the device for anything else
 
-`tool/scan_tablet.py` lists every package on the tablet and everything running on it right now, plus Android's
+`tool/scan_device.py` lists every package on the tablet and everything running on it right now, plus Android's
 settings, feature flags, scheduled background work and device policies, so you can mop up anything the default list
 doesn't cover. It only reads (it runs `ps`, `dumpsys`, `settings list`, `device_config list`, `pm list`, `ime list`
 and `getprop` over adb) and changes nothing. It needs Python 3.8+ and adb; if you've run the setup tool, it uses the
@@ -360,10 +370,10 @@ same adb.
 Plug the tablet in with USB debugging on, then from the project folder:
 
 ```sh
-python3 tool/scan_tablet.py
+python3 tool/scan_device.py
 ```
 
-It prints a summary and writes a full report (`honorpad8-scan-<date>.md`) in the current folder:
+It prints a summary and writes a full report (`honorless-scan-<date>.md`) in the current folder:
 
 - **Worth a look.** Active HONOR, Huawei or Facebook packages that aren't hidden or removed by default, plus anything
   left alone by default that's running. Running ones come first, with their processes, services and memory use. The report has a
@@ -409,7 +419,7 @@ at the next check, but only for apps you haven't changed yourself. Anything you 
 | Group | Apps | Why |
 |---|---|---|
 | Preinstalled extras | Facebook and its background services and updater, Booking.com, WPS Office, Netflix (and its preload activator), SwiftKey (once you've switched to another keyboard) | Apps and background services you never chose to install. HONOR installs some of these as ordinary apps, so Remove uninstalls them completely |
-| HONOR background services | Push, diagnostics upload, log collector, regional auto-installer, app updater, Magazine Unlock, browser homepage, Caller ID, carrier location, language downloader, print plug-in, factory test, engineering menu, Smart Diagnosis, PC Suite connector, Search service, context awareness, AI engine, HONOR location, Trusted circle, System Manager (Optimiser) | Phone-home, tracking and silent installs |
+| HONOR background services | Push, diagnostics upload, log collector, regional auto-installer, app updater, Magazine Unlock, browser homepage, Caller ID and carrier location (Wi-Fi-only devices), language downloader, print plug-in, factory test, engineering menu, Smart Diagnosis, PC Suite connector, Search service, context awareness, AI engine, HONOR location, Trusted circle, System Manager (Optimiser) | Phone-home, tracking and silent installs |
 | HONOR apps | Gallery, My HONOR, Tips, Weather, AI Lens, Backup, Device Clone, Email, Recorder, Video Editor, Notepad, Themes, Files, Calendar, Calculator, Contacts, Search, gesture and scrolling screenshots, screen recorder, YOYO suggestions, setup guide | Bundled apps with better alternatives |
 | HONOR Connect and sharing | All of it, including screen mirroring and Projection | Only useful with other HONOR devices |
 | Google apps | Meet, Gmail, YouTube Music, Drive, Google TV, Maps, the Google app (search, Assistant, Discover), Digital Wellbeing, Google Feedback, Timeline | Personal choice: choose Leave for any you use |
@@ -451,6 +461,30 @@ Some side effects to be aware of:
   working, and HONOR's background-app killing stops with them. If anything misbehaves, choose **Leave** for it. If the
   tablet ever became unusable, `adb shell pm unhide com.hihonor.systemmanager` brings it back from a computer.
 
+### Other HONOR phones and tablets
+
+The app reads the same catalogue on any device, but only shows the groups and apps that are on yours, so a phone
+doesn't get a screen full of tablet apps it hasn't got. On top of the Honor Pad 8 lists:
+
+| Group | What's in it | Default |
+|---|---|---|
+| More HONOR apps and services | HONOR packages seen on other devices (App Market, Game Suite, FM Radio, Favourites, HONOR Cloud sync, Link to Windows, remote password reset and so on) | Hide, or Leave for features you might use (passkey sign-in, game kit) |
+| Older HONOR devices | HONOR devices from before 2021 use Huawei's package names (`com.huawei.*`). Where the newer HONOR app is tested, the older one follows the same choice | **Hide, never Remove**: these devices aren't tested, and Hide is reversible. Huawei Home, HMS Core, AppGallery, Find Device and Phone Manager are left alone |
+| Core parts and Best left alone | The Huawei-era framework, theme framework, SIM manager, VoLTE calling, Wi-Fi and lock-screen parts | Never hidden |
+
+**Phones and SIM tablets.** A few defaults only apply to devices without mobile service: Caller ID, carrier location
+and network registration helpers are hidden or removed on Wi-Fi-only devices and left alone on anything with a SIM
+slot. The calling and messaging parts of Android (in-call screen, MMS, emergency alerts) are always left alone until
+you choose.
+
+**On an older HONOR device**, Huawei Home stays for the same reason HONOR Home does (it can run the gestures and
+Recents), and the home screen in use is never hidden. If something stops working, choose **Leave** for it, or bring a
+package back from a computer with `adb shell pm unhide <package>`.
+
+**What's untested.** Only the Honor Pad 8 has been run end to end. On anything else, review the list before relying
+on it, and please report what you find (see [Reporting a problem](#reporting-a-problem)). The setup tool says which
+case you're in when it connects.
+
 ### Permission-locked by default
 
 Just `com.hihonor.id` (HONOR ID), which HONOR won't let you uninstall or disable (see [What it can't do](#what-it-cant-do)).
@@ -486,8 +520,8 @@ Other ways to update the app:
    paste this repository's address, and it will notify you of new versions. Each update asks you to confirm it.
 3. **By hand:**
    ```sh
-   curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/latest/download/honor-pad-8-debloater.apk
-   adb install -r ~/Downloads/honor-pad-8-debloater.apk
+   curl -L -o ~/Downloads/honorless-debloater.apk https://github.com/<owner>/<repo>/releases/latest/download/honorless-debloater.apk
+   adb install -r ~/Downloads/honorless-debloater.apk
    ```
 
 Android only installs an update signed with the same key as the installed app, whichever way you choose.
@@ -526,7 +560,7 @@ pass all of these before it's installed:
   project's own releases (the repository the app was built from, fixed into the app when it's built). Each
   redirect is checked against the same short list, and a download link that isn't inside that project's own releases is
   refused. Plain HTTP, other hosts, other ports and certificates added to the tablet by a user or an app are all refused.
-- **What it is.** It must be the expected app (`org.fdroid.fdroid`, `app.lawnchair`, `helium314.keyboard` or `app.honorpad8.debloater`), and
+- **What it is.** It must be the expected app (`org.fdroid.fdroid`, `app.lawnchair`, `helium314.keyboard` or `app.honorless.debloater`), and
   newer than what's installed: no downgrades.
 - **Who signed it.** Its signing key must match the one pinned in the app: F-Droid's published key
   (`43238d51…c9ccab`, from [F-Droid's signing keys page](https://f-droid.org/docs/Release_Channels_and_Signing_Keys/)), and
@@ -616,13 +650,13 @@ The commands below work in bash, zsh and fish. On Windows, use PowerShell and ad
    Accept the *Allow USB debugging?* prompt on the tablet. The tablet should then be listed as `device`.
 3. **Download the app** to your Downloads folder:
    ```sh
-   curl -L -o ~/Downloads/honor-pad-8-debloater.apk https://github.com/<owner>/<repo>/releases/latest/download/honor-pad-8-debloater.apk
+   curl -L -o ~/Downloads/honorless-debloater.apk https://github.com/<owner>/<repo>/releases/latest/download/honorless-debloater.apk
    ```
    Replace `<owner>/<repo>` with this repository's path, as shown at the top of its GitHub page. You can also download
-   `honor-pad-8-debloater.apk` from the **Releases** page in your browser.
+   `honorless-debloater.apk` from the **Releases** page in your browser.
 4. **Install it:**
    ```sh
-   adb install -r ~/Downloads/honor-pad-8-debloater.apk
+   adb install -r ~/Downloads/honorless-debloater.apk
    ```
    It should end with `Success`. If you get `failed to stat … No such file or directory`, the path is wrong: check the file
    is in your Downloads folder and that you typed the full path.
@@ -635,13 +669,13 @@ The commands below work in bash, zsh and fish. On Windows, use PowerShell and ad
    The first must list only `UserInfo{0:...}`. The second must show `Accounts: 0`, and no `Account {` lines.
 6. **Make it device owner:**
    ```sh
-   adb shell dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
+   adb shell dpm set-device-owner app.honorless.debloater/.AdminReceiver
    ```
    You should see `Success: Device owner set`.
 7. **Sign back in** to your Google account and anything else in **Settings → Users & accounts**.
-8. **Open Honor Pad 8 Debloater** on the tablet. It should say **Protection is on**. If you removed extra apps with adb,
+8. **Open Honorless Debloater** on the tablet. It should say **Protection is on**. If you removed extra apps with adb,
    open **Advanced** and tap **Add them to the list**.
-9. **Let HONOR's battery manager allow it.** Go to **Settings → Battery → App launch → Honor Pad 8 Debloater**, turn off
+9. **Let HONOR's battery manager allow it.** Go to **Settings → Battery → App launch → Honorless Debloater**, turn off
    *Manage automatically*, and turn on **all three** switches (auto-launch, secondary launch, run in background).
    Without this, HONOR may stop it running at boot.
 10. **Check it runs at boot:**
@@ -657,13 +691,13 @@ That's it. It now looks after itself, and you can turn USB debugging off again i
 The same commands can run on the tablet itself, using Android's **Wireless debugging** (Android 11+) and the free apps
 **Shizuku** and **aShell**:
 
-1. Install Shizuku and aShell, and install `honor-pad-8-debloater.apk` from the Releases page in your browser.
+1. Install Shizuku and aShell, and install `honorless-debloater.apk` from the Releases page in your browser.
 2. Turn on **Developer options → Wireless debugging**, then start Shizuku with *Start via Wireless debugging* and follow its
    pairing steps.
 3. Remove all accounts (step 5 above). In aShell, run the two commands from steps 5 and 6 without the `adb shell` part:
    ```sh
    dumpsys account | grep -E 'Accounts:|Account \{'
-   dpm set-device-owner app.honorpad8.debloater/.AdminReceiver
+   dpm set-device-owner app.honorless.debloater/.AdminReceiver
    ```
 4. Carry on from step 7. Afterwards you can uninstall Shizuku and aShell and turn Wireless debugging off; the debloater
    doesn't need them.
@@ -679,7 +713,7 @@ push isn't held up. To build your own copy (for example in a fork):
 1. **Make a signing key** (needs a JDK for `keytool`):
    ```sh
    keytool -genkeypair -keystore debloater.jks -storetype PKCS12 -alias debloater \
-     -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=Honor Pad 8 Debloater"
+     -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=Honorless Debloater"
    ```
    Keep `debloater.jks` and its password somewhere safe and **offline**. If you lose it, you can't update the installed app,
    and you'd have to release it and set it up again.
@@ -706,7 +740,7 @@ starts again from 1 if you do. Android would then see newer builds as older vers
 **Checking a build** (optional; needs Android build-tools): confirm the APK's certificate matches your key:
 
 ```sh
-apksigner verify --print-certs honor-pad-8-debloater.apk
+apksigner verify --print-certs honorless-debloater.apk
 keytool -list -v -keystore debloater.jks -alias debloater | grep SHA256
 ```
 
@@ -726,7 +760,7 @@ debug key.
 **Installing F-Droid, Lawnchair or HeliBoard says "Unable to resolve f-droid.org" (or api.github.com).**
 The app couldn't look up the address, which on Android almost always means **this app's internet is being blocked**
 rather than the site being down. The app now says which of these it is:
-- *HONOR's per-app network control:* Settings > Apps > Apps > Honor Pad 8 Debloater > Data usage: turn on **Wi-Fi**
+- *HONOR's per-app network control:* Settings > Apps > Apps > Honorless Debloater > Data usage: turn on **Wi-Fi**
   (and **Background data**). The app used to have no internet permission at all, so HONOR may have it switched off.
 - *Private DNS:* if you set one and websites don't load either, switch it off in **Privacy and security**.
 - *Always-on VPN in lockdown:* check the VPN app is connected, or release it in **Privacy and security**.
@@ -755,10 +789,10 @@ combination on HONOR tablets) and choose *Wipe data/factory reset*. That removes
 works, `adb shell pm unhide <package>` may bring a single app back without a reset.
 
 **`adb: failed to stat … No such file or directory`.**
-adb can't find the APK at the path you gave. Use the full path, for example `~/Downloads/honor-pad-8-debloater.apk`, and check
+adb can't find the APK at the path you gave. Use the full path, for example `~/Downloads/honorless-debloater.apk`, and check
 the file is really there with `ls ~/Downloads/*.apk`.
 
-**`Unknown admin: ComponentInfo{app.honorpad8.debloater/...}`.**
+**`Unknown admin: ComponentInfo{app.honorless.debloater/...}`.**
 The app isn't installed, usually because the install step failed. Install it again (step 6 in the setup tool, or step 4 of
 [Setting it up by hand](#setting-it-up-by-hand-advanced)) and make sure it says `Success`.
 
@@ -788,7 +822,7 @@ bring those back with `adb shell cmd package install-existing <package>`, or by 
 .github/workflows/build.yml       CI: builds and signs the app, packages the tool per OS, publishes the release
 app/src/main/AndroidManifest.xml  permissions and components
 app/src/main/assets/catalogue.txt every known app: name, description, group, on or off by default
-app/src/main/java/app/honorpad8/debloater/
+app/src/main/java/app/honorless/debloater/
   Enforcer.kt                     the policy engine: hide, suspend, lock, restore, detect new packages
   Store.kt                        crash-safe storage for the lists, records and log
   Catalogue.kt                    reads catalogue.txt; builds the default lists
@@ -800,7 +834,7 @@ app/src/main/java/app/honorpad8/debloater/
   MainActivity.kt, Ui.kt          the app's screen and its look
 app/src/main/res/                 icon, device-admin policy, backup exclusion rules, HTTPS-only network config
 tool/debloater_setup.py           the setup and update tool (Python, standard library only)
-tool/scan_tablet.py               read-only scan of everything installed and running on the tablet
+tool/scan_device.py               read-only scan of everything installed and running on the tablet
 tool/icons/                       the shield icon (same as the tablet app) for the packaged tool and its window
 tool/trusted_signer.sha256        fingerprint of the official signing key the tool checks downloads against
 tool/requirements-build.txt       exact, hash-pinned packages used to package the tool (not needed to run it)
@@ -809,3 +843,8 @@ tool/requirements-build.txt       exact, hash-pinned packages used to package th
 ## Licence
 
 MIT; see [LICENSE](LICENSE).
+
+Finding which HONOR and Huawei packages exist on other devices was helped by the community package research in
+[Universal Android Debloater Next Generation](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation)
+(GPL-3.0). None of its code, lists or descriptions are included here: this project's catalogue entries, groupings and
+defaults are its own.

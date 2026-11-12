@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Honor Pad 8 Debloater - setup and update tool.
+Honorless Debloater - setup and update tool.
 
 A step-by-step window that installs everything needed, installs (or updates) the
-Honor Pad 8 Debloater app on the tablet, and makes it the tablet's device owner.
+Honorless Debloater app on the device, and makes it the device owner.
 
 Runs on Windows, macOS and Linux with Python 3.8+ and nothing else: it only uses
 the standard library. If Android's `adb` tool is missing it downloads Google's
@@ -34,11 +34,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
-APP_NAME = "Honor Pad 8 Debloater"
-PACKAGE = "app.honorpad8.debloater"
+APP_NAME = "Honorless Debloater"
+PACKAGE = "app.honorless.debloater"
+OLD_PACKAGE = "app.honorpad8.debloater"   # the app before it was renamed; replaced, not updated
 ADMIN_COMPONENT = PACKAGE + "/.AdminReceiver"
-APK_ASSET = "honor-pad-8-debloater.apk"
-USER_AGENT = "HonorPad8Debloater-Setup"
+APK_ASSET = "honorless-debloater.apk"
+USER_AGENT = "HonorlessDebloater-Setup"
 MIN_SDK = 29  # Android 10
 
 # Colours for the setup window.
@@ -92,12 +93,12 @@ def data_dir() -> Path:
     """Per-user folder for downloads and settings. Never needs admin rights."""
     if IS_WINDOWS:
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-        d = base / "HonorPad8Debloater"
+        d = base / "HonorlessDebloater"
     elif IS_MAC:
-        d = Path.home() / "Library" / "Application Support" / "HonorPad8Debloater"
+        d = Path.home() / "Library" / "Application Support" / "HonorlessDebloater"
     else:
         base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
-        d = base / "honor-pad-8-debloater"
+        d = base / "honorless-debloater"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -349,9 +350,9 @@ def latest_release(repo: str) -> Release:
 
 # The setup tool itself, as built for each kind of computer (see .github/workflows/build.yml).
 TOOL_ASSETS = {
-    "windows": "HonorPad8Debloater-Setup-Windows.exe",
-    "mac": "HonorPad8Debloater-Setup-macOS.zip",
-    "linux": "HonorPad8Debloater-Setup-Linux",
+    "windows": "HonorlessDebloater-Setup-Windows.exe",
+    "mac": "HonorlessDebloater-Setup-macOS.zip",
+    "linux": "HonorlessDebloater-Setup-Linux",
 }
 SUMS_ASSET = "SHA256SUMS.txt"
 RELEASE_TAG_RE = re.compile(r"v1\.0\.[0-9]{1,9}")   # used with fullmatch: "$" would also allow a trailing newline
@@ -725,18 +726,27 @@ def parse_device_owner(text: str) -> Optional[str]:
     return None
 
 
+def remove_old_app(adb: "Adb") -> bool:
+    """Uninstall the pre-rename app once it's no longer device owner. True if it was there and is now gone."""
+    _, out = adb.shell(f"pm list packages {OLD_PACKAGE}", quiet=True)
+    if f"package:{OLD_PACKAGE}" not in out.split():
+        return False
+    code, res = adb.shell(f"pm uninstall {OLD_PACKAGE}", quiet=True)
+    return code == 0 and "Success" in res
+
+
 def explain_dpm_error(text: str) -> str:
     t = text or ""
     if "already some accounts" in t:
-        return "There's still an account on the tablet. Go back one step and remove every account."
+        return "There's still an account on the device. Go back one step and remove every account."
     if "already several users" in t or "several users" in t:
-        return "The tablet has more than one user (or a guest user, or App Twin). Remove the extra users first."
+        return "The device has more than one user (or a guest user, or App Twin). Remove the extra users first."
     if "Unknown admin" in t:
-        return "The app isn't installed on the tablet. Go back to the install step."
+        return "The app isn't installed on the device. Go back to the install step."
     if "already set" in t or "device owner is already" in t.lower():
-        return "Another app is already the tablet's device owner. Only one app can be."
+        return "Another app is already the device's device owner. Only one app can be."
     if "already provisioned" in t:
-        return "This tablet's firmware only allows a device owner during first-time setup. A factory reset would be needed."
+        return "This device's firmware only allows a device owner during first-time setup. A factory reset would be needed."
     return "Android refused. The details below say why."
 
 
@@ -748,10 +758,10 @@ def explain_install_error(text: str) -> str:
     if "INSTALL_FAILED_VERSION_DOWNGRADE" in t:
         return "A newer version is already installed. Nothing to do."
     if "INSTALL_FAILED_ABORTED" in t or "INSTALL_FAILED_USER_RESTRICTED" in t:
-        return ("The tablet blocked or cancelled the install. Watch the tablet when you press Install: HONOR asks "
+        return ("The device blocked or cancelled the install. Watch the device when you press Install: HONOR asks "
                 "you to confirm apps installed over USB. Tap Install (or Continue installation) there.")
     if "INSTALL_FAILED_INSUFFICIENT_STORAGE" in t:
-        return "The tablet is out of storage space. Free some up and try again."
+        return "The device is out of storage space. Free some up and try again."
     return "The install failed. The details below say why."
 
 
@@ -873,6 +883,26 @@ def read_tablet_info(adb: Adb) -> TabletInfo:
     )
 
 
+TESTED_MODELS = ("HEY-W09",)   # Honor Pad 8 (Wi-Fi)
+
+
+def device_note(info: "TabletInfo") -> str:
+    """A line for the connect page: how well the default list is known to fit this device."""
+    brand = (info.brand or "").lower()
+    model = (info.model or "").upper()
+    if "honor" in brand:
+        if any(model.startswith(m) for m in TESTED_MODELS):
+            return ""
+        return ("\n\nThe default list is tested on the Honor Pad 8. On other HONOR phones and tablets the app only "
+                "shows what's on yours, and it hides (never removes) the older Huawei-era parts, but review the "
+                "list after setup.")
+    if "huawei" in brand:
+        return ("\n\nThis is a Huawei device. Older HONOR devices share Huawei's package names, so much of the list "
+                "fits, but Huawei devices aren't tested. Review the list after setup.")
+    return ("\n\nThis isn't an HONOR device. The app works on any Android 10+ device, but its default list is made "
+            "for HONOR devices, so review the list after setup.")
+
+
 def installed_version(adb: Adb) -> Optional[int]:
     _, out = adb.shell(f"dumpsys package {PACKAGE}", quiet=True)
     if f"Package [{PACKAGE}]" not in out:
@@ -881,23 +911,23 @@ def installed_version(adb: Adb) -> Optional[int]:
 
 
 # Settings only the user can change (Android doesn't let apps change them). Each: id, title, why, button label,
-# the command that opens the right screen on the tablet, and a read-only command whose output says whether it's done.
+# the command that opens the right screen on the device, and a read-only command whose output says whether it's done.
 PRIVACY_TODOS = [
     ("screenlock", "Set a screen lock",
      "A PIN, pattern or password, so nobody who picks it up can just get in.",
-     "Open on the tablet", "am start -a android.app.action.SET_NEW_PASSWORD", "dumpsys lock_settings"),
+     "Open on the device", "am start -a android.app.action.SET_NEW_PASSWORD", "dumpsys lock_settings"),
     ("playprotect", "Stop Play Protect sending your apps to Google",
      "Gear > turn off \"Improve harmful app detection\" (uploads non-Play apps).",
-     "Open on the tablet",
+     "Open on the device",
      "am start -n com.google.android.gms/.security.settings.VerifyAppsSettingsActivity || "
      "monkey -p com.android.vending -c android.intent.category.LAUNCHER 1",
      "settings get global upload_apk_enable"),
     ("wifiplus", "Turn off HONOR's Wi-Fi+",
      "Wi-Fi > More settings > Wi-Fi+. It tests networks via outside servers (baidu.com).",
-     "Open on the tablet", "am start -a android.settings.WIFI_SETTINGS", "settings get global hn_wifipro_enable"),
+     "Open on the device", "am start -a android.settings.WIFI_SETTINGS", "settings get global hn_wifipro_enable"),
     ("adid", "Delete your advertising ID",
      "Privacy > Ads (or Google > Ads) > Delete advertising ID. Not checkable here.",
-     "Open on the tablet",
+     "Open on the device",
      "am start -a com.google.android.gms.settings.ADS_PRIVACY || am start -a android.settings.PRIVACY_SETTINGS",
      None),
 ]
@@ -1173,14 +1203,14 @@ def main() -> None:
             self.steps = [
                 ("Welcome", self.step_welcome),
                 ("Get the tools", self.step_tools),
-                ("Prepare the tablet", self.step_prepare),
-                ("Connect the tablet", self.step_connect),
+                ("Prepare the device", self.step_prepare),
+                ("Connect the device", self.step_connect),
                 ("Get the app", self.step_get_app),
                 ("Install the app", self.step_install),
                 ("Remove accounts", self.step_accounts),
                 ("Make it device owner", self.step_owner),
                 ("Privacy settings", self.step_privacy),
-                ("Finish on the tablet", self.step_finish),
+                ("Finish on the device", self.step_finish),
             ]
             self.side_labels = []
             for i, (name, _) in enumerate(self.steps):
@@ -1423,24 +1453,24 @@ def main() -> None:
             # Filled in at the top of the page if a newer version of this tool is out (see check_tool_update).
             self.update_box = ttk.Frame(self.body)
             self.update_box.pack(anchor="w", fill="x")
-            self.para("This tool sets up Honor Pad 8 Debloater on your tablet, or updates it if it's already set up. "
+            self.para("This tool sets up Honorless Debloater on your device, or updates it if it's already set up. "
                       "It walks you through every step and checks each one worked before moving on.")
             ttk.Label(self.body, text="What the app does", font=self.f_head).pack(anchor="w", pady=(4, 2))
-            self.para("It becomes the tablet's \"device owner\", a built-in Android role, and uses it to hide HONOR's "
+            self.para("It becomes the device's \"device owner\", a built-in Android role, and uses it to hide HONOR's "
                       "preinstalled apps and trackers, and to keep them hidden after system updates. No root and no "
-                      "bootloader unlocking. Nothing on the tablet is wiped.")
+                      "bootloader unlocking. Nothing on the device is wiped.")
             ttk.Label(self.body, text="You'll need", font=self.f_head).pack(anchor="w", pady=(4, 2))
             self.steps_list([
-                "The tablet, charged, and a USB cable that carries data (some cables only charge).",
+                "The device, charged, and a USB cable that carries data (some cables only charge).",
                 "About 10 minutes.",
-                "To sign out of the accounts on the tablet (your Google account and any others) for a few minutes. "
+                "To sign out of the accounts on the device (your Google account and any others) for a few minutes. "
                 "Android insists on this. You sign straight back in afterwards: nothing is deleted, and your data "
                 "syncs back.",
             ])
             self.para("Already set up? Just go through the steps. Anything already done is detected and skipped, "
                       "and you'll be offered the newest version of the app.")
             var = tk.BooleanVar(value=False)
-            ttk.Checkbutton(self.body, text="I understand I'll need to sign out of my accounts on the tablet for a few minutes",
+            ttk.Checkbutton(self.body, text="I understand I'll need to sign out of my accounts on the device for a few minutes",
                             variable=var, command=lambda: self.allow_next(var.get())).pack(anchor="w", pady=(6, 4))
             self.check_tool_update()
 
@@ -1496,7 +1526,7 @@ def main() -> None:
 
         # ---------------------------------------------------------------- tools
         def step_tools(self) -> None:
-            self.para("The tool talks to the tablet using adb, Google's official Android Debug Bridge. "
+            self.para("The tool talks to the device using adb, Google's official Android Debug Bridge. "
                       "If it isn't on this computer, the tool downloads Google's copy into its own folder. "
                       "It doesn't need administrator rights and doesn't change anything else on your computer.")
             st = self.status("Checking for adb...")
@@ -1569,19 +1599,19 @@ def main() -> None:
 
         # -------------------------------------------------------------- prepare
         def step_prepare(self) -> None:
-            self.para("Turn on USB debugging. This lets this computer send setup commands to the tablet. "
+            self.para("Turn on USB debugging. This lets this computer send setup commands to the device. "
                       "You can turn it off again when you've finished.")
             self.steps_list([
-                "On the tablet, open Settings > About tablet.",
+                "On the device, open Settings > About tablet.",
                 "Tap Build number 7 times. Enter your PIN if asked. You'll see \"You are now a developer\".",
                 "Go back to Settings > System & updates > Developer options.",
                 "Turn on USB debugging, and tap OK.",
                 "Also in Developer options, turn on \"Allow ADB debugging in charge only mode\" if you see it.",
-                "Unlock the tablet and plug it into this computer with the USB cable.",
+                "Unlock the device and plug it into this computer with the USB cable.",
             ])
             self.para("Can't find something? Use the search bar at the top of Settings, for example search for \"build number\".")
             var = tk.BooleanVar(value=self.done[self.index])
-            ttk.Checkbutton(self.body, text="I've turned on USB debugging and plugged the tablet in",
+            ttk.Checkbutton(self.body, text="I've turned on USB debugging and plugged the device in",
                             variable=var, command=lambda: self.allow_next(var.get())).pack(anchor="w", pady=(6, 0))
             self.allow_next(var.get())
 
@@ -1590,7 +1620,7 @@ def main() -> None:
             if not self.adb:
                 self.para("adb isn't ready. Go back to \"Get the tools\".")
                 return
-            self.para("Looking for the tablet. Keep it unlocked. This page updates by itself.")
+            self.para("Looking for the device. Keep it unlocked. This page updates by itself.")
             st = self.status("Searching...")
             hint = self.para("")
             info = ttk.Label(self.body, text="", justify="left")
@@ -1635,18 +1665,17 @@ def main() -> None:
                     chooser.configure(values=[f"{d.serial}  (connected)" for d in ready])
                     chooser.pack(side="left")
                     if not chosen:
-                        self.set_status(st, "More than one Android device is connected. Pick the tablet:", "warn")
+                        self.set_status(st, "More than one Android device is connected. Pick the device:", "warn")
                         self.allow_next(False)
                         return
                 if chosen and tablet:
                     self.tablet = tablet
-                    self.set_status(st, "✓ Tablet connected.", "good")
+                    self.set_status(st, "✓ Device connected.", "good")
                     warn = ""
                     if tablet.sdk and tablet.sdk < MIN_SDK:
-                        warn = f"\n\nThis tablet runs Android {tablet.android}. The app needs Android 10 or newer."
-                    elif "honor" not in (tablet.brand or "").lower():
-                        warn = ("\n\nThis isn't an HONOR device. The app works on any Android 10+ device, but its default "
-                                "list is made for the Honor Pad 8, so review the list after setup.")
+                        warn = f"\n\nThis device runs Android {tablet.android}. The app needs Android 10 or newer."
+                    else:
+                        warn = device_note(tablet)
                     info.configure(text=f"{tablet.brand} {tablet.model}, Android {tablet.android}{warn}")
                     hint.configure(text="")
                     if not (tablet.sdk and tablet.sdk < MIN_SDK):
@@ -1656,19 +1685,19 @@ def main() -> None:
                 info.configure(text="")
                 states = {d.state for d in devs}
                 if "unauthorized" in states:
-                    self.set_status(st, "Almost: look at the tablet.", "warn")
-                    hint.configure(text="A box saying \"Allow USB debugging?\" should be on the tablet's screen. Tick "
+                    self.set_status(st, "Almost: look at the device.", "warn")
+                    hint.configure(text="A box saying \"Allow USB debugging?\" should be on the device's screen. Tick "
                                         "\"Always allow from this computer\" and tap Allow. If you can't see it, unlock "
-                                        "the tablet, or unplug and plug the cable back in.")
+                                        "the device, or unplug and plug the cable back in.")
                 elif "nopermissions" in states:
-                    self.set_status(st, "This computer isn't allowed to talk to the tablet yet.", "warn")
+                    self.set_status(st, "This computer isn't allowed to talk to the device yet.", "warn")
                     cmd = linux_package_command("udev")
                     if cmd:
                         how = ("Click the button (it asks for your password), or run this in a terminal yourself:"
                                if which("pkexec") else "Run this in a terminal:")
                         hint.configure(text="Linux needs Android's USB rules installed. " + how + "\n"
                                             "    sudo " + " ".join(cmd) + "\n"
-                                            "Then unplug the tablet and plug it back in.")
+                                            "Then unplug the device and plug it back in.")
                         if which("pkexec"):
                             udev_btn.configure(command=lambda: self.install_udev(cmd, st))
                             udev_btn.pack(side="left")
@@ -1676,23 +1705,23 @@ def main() -> None:
                         copy_btn.pack(side="left", padx=8)
                     else:
                         hint.configure(text="Install your distribution's Android udev rules package, then unplug the "
-                                            "tablet and plug it back in.")
+                                            "device and plug it back in.")
                 elif "offline" in states:
-                    self.set_status(st, "The tablet is connected but not responding.", "warn")
+                    self.set_status(st, "The device is connected but not responding.", "warn")
                     hint.configure(text="Unplug it, wait 5 seconds, and plug it back in. If that doesn't help, turn USB "
-                                        "debugging off and on again on the tablet.")
+                                        "debugging off and on again on the device.")
                 else:
-                    self.set_status(st, "No tablet found yet.", "")
+                    self.set_status(st, "No device found yet.", "")
                     if time.time() - started > 12:
                         extra = ""
                         if IS_WINDOWS:
-                            extra = ("\n• On Windows, the tablet may need a USB driver. Open Device Manager: if you "
-                                     "see the tablet with a warning sign, right-click it > Update driver > Search "
+                            extra = ("\n• On Windows, the device may need a USB driver. Open Device Manager: if you "
+                                     "see the device with a warning sign, right-click it > Update driver > Search "
                                      "automatically. HONOR's driver also comes with its HiSuite app.")
                         hint.configure(text="Things to check:\n"
-                                            "• The tablet is unlocked and USB debugging is on (previous step).\n"
+                                            "• The device is unlocked and USB debugging is on (previous step).\n"
                                             "• Try another USB cable or port: many cables only charge.\n"
-                                            "• Pull down the tablet's notifications, tap the USB notice and choose "
+                                            "• Pull down the device's notifications, tap the USB notice and choose "
                                             "\"File transfer\"." + extra)
             self.poll(2000, work, done)
 
@@ -1706,7 +1735,7 @@ def main() -> None:
                 if err or rc != 0:
                     self.set_status(st, "That didn't work (cancelled or failed). Try the command yourself.", "bad")
                 else:
-                    self.set_status(st, "Done. Now unplug the tablet and plug it back in.", "good")
+                    self.set_status(st, "Done. Now unplug the device and plug it back in.", "good")
                     adb = self.adb   # restart adb so it picks up the new rules, without blocking the window
                     threading.Thread(target=lambda: adb.run("kill-server", use_serial=False), daemon=True).start()
             self.background(work, done)
@@ -1718,10 +1747,10 @@ def main() -> None:
 
         def step_get_app(self) -> None:
             if not self.adb or not self.adb.serial:
-                self.para("The tablet isn't connected. Go back to \"Connect the tablet\".")
+                self.para("The device isn't connected. Go back to \"Connect the device\".")
                 return
             self.para("Now the tool fetches the newest version of the app from the project's GitHub page, and checks "
-                      "it's signed with the project's official key before it goes anywhere near your tablet.")
+                      "it's signed with the project's official key before it goes anywhere near your device.")
             if not self.trusted:
                 self.status("✗ This copy of the tool is incomplete.", "bad")
                 self.para("The file trusted_signer.sha256 (the fingerprint of the project's official signing key) is "
@@ -1731,7 +1760,7 @@ def main() -> None:
             repo = self.repo()
             if not repo:
                 self.para("Which GitHub project should the app come from? Paste its address, for example "
-                          "https://github.com/owner/Honor-Pad-8-Debloater")
+                          "https://github.com/owner/Honorless-Debloater")
                 row = self.buttons()
                 entry = ttk.Entry(row, width=60)
                 entry.pack(side="left")
@@ -1784,7 +1813,7 @@ def main() -> None:
 
         def download_apk(self, st, detail, retry) -> None:
             rel = self.release
-            dest = data_dir() / f"honor-pad-8-debloater-{safe_filename_part(rel.version_name)}.apk"
+            dest = data_dir() / f"honorless-debloater-{safe_filename_part(rel.version_name)}.apk"
             self.set_busy(True)
 
             def work():
@@ -1810,7 +1839,7 @@ def main() -> None:
                     retry.pack(side="left")
                     return
                 self.log(f"Verified: APK signature scheme {sig.scheme}, {sig.algorithm}, certificate {sig.fingerprint}")
-                for old in data_dir().glob("honor-pad-8-debloater-*.apk"):
+                for old in data_dir().glob("honorless-debloater-*.apk"):
                     if old != dest:
                         old.unlink(missing_ok=True)
                 self.apk_path = dest
@@ -1823,7 +1852,7 @@ def main() -> None:
         # -------------------------------------------------------------- install
         def step_install(self) -> None:
             if not self.adb or not self.adb.serial:
-                self.para("The tablet isn't connected. Go back to \"Connect the tablet\".")
+                self.para("The device isn't connected. Go back to \"Connect the device\".")
                 return
             if not self.apk_path:
                 if self.installed_code is not None:
@@ -1833,9 +1862,9 @@ def main() -> None:
                     self.para("The app hasn't been downloaded. Go back to \"Get the app\".")
                 return
             updating = self.installed_code is not None
-            self.para(("This updates the app on the tablet. Its lists and settings are kept."
-                       if updating else "This installs the app on the tablet."))
-            self.para("Watch the tablet's screen when you press the button. HONOR may ask you to confirm apps "
+            self.para(("This updates the app on the device. Its lists and settings are kept."
+                       if updating else "This installs the app on the device."))
+            self.para("Watch the device's screen when you press the button. HONOR may ask you to confirm apps "
                       "installed over USB: tap Install (or Continue installation) within a few seconds.", style="Warn.TLabel")
             st = self.status("")
             bar = self.buttons()
@@ -1845,7 +1874,7 @@ def main() -> None:
 
             def go():
                 self.set_busy(True, btn)
-                self.set_status(st, "Installing... check the tablet for a prompt.", "")
+                self.set_status(st, "Installing... check the device for a prompt.", "")
 
                 def work():
                     verify_apk(self.apk_path, self.trusted)   # re-check the file right before it's installed
@@ -1877,7 +1906,7 @@ def main() -> None:
         # ------------------------------------------------------------- accounts
         def step_accounts(self) -> None:
             if not self.adb or not self.adb.serial:
-                self.para("The tablet isn't connected. Go back to \"Connect the tablet\".")
+                self.para("The device isn't connected. Go back to \"Connect the device\".")
                 return
             st = self.status("Checking...")
             intro = self.para("")
@@ -1886,7 +1915,7 @@ def main() -> None:
             how = ttk.Frame(self.body)
             how.pack(anchor="w", fill="x")
             bar = self.buttons()
-            open_btn = ttk.Button(bar, text="Open the accounts screen on the tablet",
+            open_btn = ttk.Button(bar, text="Open the accounts screen on the device",
                                   command=lambda: self.background(
                                       lambda: self.adb.shell("am start -a android.settings.SYNC_SETTINGS"), lambda r, e: None))
             shown = {"how": False}
@@ -1895,6 +1924,9 @@ def main() -> None:
                 owner = current_device_owner(self.adb)
                 if owner == PACKAGE:
                     return "owner", None, None
+                if owner == OLD_PACKAGE:
+                    return "old", None, None
+                remove_old_app(self.adb)    # released (or never device owner): it's safe to take away
                 _, acc = self.adb.shell("dumpsys account", quiet=True)
                 _, users = self.adb.shell("pm list users", quiet=True)
                 return owner, parse_accounts(acc), parse_user_count(users)
@@ -1911,19 +1943,28 @@ def main() -> None:
                     self.owner = PACKAGE
                     self.complete()
                     return
+                if owner == "old":
+                    self.set_status(st, "The old Honor Pad 8 Debloater is still the device owner.", "warn")
+                    intro.configure(text="Only one app can be device owner, and the renamed app can't take over from the "
+                                         "old one. On the device, open Honor Pad 8 Debloater, scroll down to Advanced, "
+                                         "tap Release device owner and confirm. Everything it hid comes back for now; "
+                                         "the new app hides it again once it's set up. This tool then uninstalls the "
+                                         "old app for you. This page updates by itself.")
+                    self.allow_next(False)
+                    return
                 if owner:
-                    self.set_status(st, f"✗ Another app ({owner}) is already this tablet's device owner.", "bad")
+                    self.set_status(st, f"✗ Another app ({owner}) is already this device's device owner.", "bad")
                     intro.configure(text="Only one app can be device owner. Remove that app's management first.")
                     return
                 count, types = acc
                 if users and users > 1:
-                    self.set_status(st, f"The tablet has {users} users. Android needs just one.", "warn")
+                    self.set_status(st, f"The device has {users} users. Android needs just one.", "warn")
                     intro.configure(text="Remove the extra users (including any guest user) in Settings > Users & "
                                          "accounts > Users, and turn off App Twin if you use it. This page updates by itself.")
                     self.allow_next(False)
                     return
                 if count:
-                    self.set_status(st, f"{count} account{'s' if count != 1 else ''} still on the tablet.", "warn")
+                    self.set_status(st, f"{count} account{'s' if count != 1 else ''} still on the device.", "warn")
                     intro.configure(text="Android only lets an app become device owner when no accounts are signed in. "
                                          "Remove these for now; you'll sign back in at the end. Nothing is deleted from "
                                          "your accounts.")
@@ -1934,7 +1975,7 @@ def main() -> None:
                         frame_before = self.body
                         self.body = how
                         self.steps_list([
-                            "On the tablet, open Settings > Users & accounts (or press the button below).",
+                            "On the device, open Settings > Users & accounts (or press the button below).",
                             "Tap an account, then tap Remove account (sometimes under the ⋮ menu). Confirm.",
                             "Repeat for every account in the list above.",
                         ])
@@ -1952,13 +1993,13 @@ def main() -> None:
         # ---------------------------------------------------------------- owner
         def step_owner(self) -> None:
             if not self.adb or not self.adb.serial:
-                self.para("The tablet isn't connected. Go back to \"Connect the tablet\".")
+                self.para("The device isn't connected. Go back to \"Connect the device\".")
                 return
             if self.owner == PACKAGE:
                 self.status("✓ The app is already the device owner. Nothing to do here.", "good")
                 self.complete()
                 return
-            self.para("This is the step that gives the app its powers. It runs one command on the tablet:")
+            self.para("This is the step that gives the app its powers. It runs one command on the device:")
             ttk.Label(self.body, text="    dpm set-device-owner " + ADMIN_COMPONENT, font=self.f_mono).pack(anchor="w", pady=(0, 10))
             st = self.status("")
             bar = self.buttons()
@@ -1982,7 +2023,7 @@ def main() -> None:
                     _rc, out, owner = res
                     if owner == PACKAGE or "Success" in out:
                         self.owner = PACKAGE
-                        self.set_status(st, "✓ Done. The app is now the tablet's device owner.", "good")
+                        self.set_status(st, "✓ Done. The app is now the device's device owner.", "good")
                         btn.configure(state="disabled")
                         self.complete()
                     else:
@@ -1993,7 +2034,7 @@ def main() -> None:
 
         # --------------------------------------------------------------- finish
         def step_privacy(self) -> None:
-            self.para("Settings Android doesn't let apps change. Each button opens the right screen on the tablet. "
+            self.para("Settings Android doesn't let apps change. Each button opens the right screen on the device. "
                       "All optional; the app shows the same list until they're done.")
             top = ttk.Frame(self.body)
             top.pack(anchor="w", fill="x", pady=(0, 4))
@@ -2024,8 +2065,8 @@ def main() -> None:
                 latest[0] += 1
                 mine = latest[0]
                 if not (self.adb and self.adb.serial):
-                    self.set_status(summary, "The tablet isn't connected, so these can't be checked. The app on the "
-                                             "tablet shows the same list.", "warn")
+                    self.set_status(summary, "The device isn't connected, so these can't be checked. The app on the "
+                                             "device shows the same list.", "warn")
                     return
 
                 def work():
@@ -2091,11 +2132,11 @@ def main() -> None:
                           "You can turn USB debugging off again.")
                 row = self.buttons()
                 if self.adb and self.adb.serial:
-                    ttk.Button(row, text="Open the app on the tablet", command=lambda: self.background(
+                    ttk.Button(row, text="Open the app on the device", command=lambda: self.background(
                         lambda: self.adb.shell(f"am start -n {PACKAGE}/.MainActivity"), lambda r, e: None)).pack(side="left")
                 self.complete()
                 return
-            self.para("Nearly there. Finish these on the tablet:")
+            self.para("Nearly there. Finish these on the device:")
 
             def tablet_cmd(cmd: str) -> Callable[[], None]:
                 return lambda: self.background(lambda: self.adb.shell(cmd), lambda r, e: None)
@@ -2103,11 +2144,11 @@ def main() -> None:
             items = [
                 ("Sign back in to your Google account (and any others) in Settings > Users & accounts.",
                  "Open accounts", "am start -a android.settings.SYNC_SETTINGS"),
-                ("Open Honor Pad 8 Debloater. It should say \"Protection is on\", and it offers to replace HONOR's "
+                ("Open Honorless Debloater. It should say \"Protection is on\", and it offers to replace HONOR's "
                  "home screen and keyboard with Lawnchair and HeliBoard. If you removed apps with adb before, open "
                  "Advanced and tap \"Add them to the list\".", "Open the app",
                  f"am start -n {PACKAGE}/.MainActivity"),
-                ("Let it run at boot: Settings > Battery > App launch > Honor Pad 8 Debloater. Turn off \"Manage "
+                ("Let it run at boot: Settings > Battery > App launch > Honorless Debloater. Turn off \"Manage "
                  "automatically\" and turn on all three switches.", "Open battery settings",
                  "am start -a android.intent.action.POWER_USAGE_SUMMARY"),
             ]
@@ -2130,7 +2171,7 @@ def main() -> None:
             self.complete()
 
     root = tk.Tk()
-    try:  # the same shield icon as the tablet app, for the window and taskbar
+    try:  # the same shield icon as the device app, for the window and taskbar
         root._icon = tk.PhotoImage(file=str(resource_dir() / "icons" / "icon.png"))
         root.iconphoto(True, root._icon)
     except (tk.TclError, OSError):

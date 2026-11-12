@@ -1,10 +1,12 @@
-# Honor Pad 8 Debloater: the catalogue of known apps and services.
+# Honorless Debloater: the catalogue of known apps and services.
 #
-# The app shows every entry here with a Leave / Hide / Remove choice, and the tablet scan script
-# (tool/scan_tablet.py) uses it to describe what it finds. The second field is the default:
+# The app shows every entry here with a Leave / Hide / Remove choice, and the device scan script
+# (tool/scan_device.py) uses it to describe what it finds. The second field is the default:
 #   remove = hidden, with its data wiped and its Play Store updates stripped
 #   hide   = hidden, data kept (choosing Leave later restores it as it was)
 #   leave  = offered in the app, but left alone until you choose
+#   remove-nosim / hide-nosim = remove or hide on devices without mobile service (Wi-Fi-only tablets);
+#            on phones and SIM tablets the default is leave
 # In a "lock" group the default is lock or leave. ("on" means hide and "off" means leave.)
 #
 # Format (one item per line, fields separated by "|"):
@@ -15,7 +17,7 @@
 #        keep = best left alone (things depend on them); not shown in the app, listed so the scan script can label them.
 # Lines starting with # are comments.
 
-== preloads | hide | Preinstalled extras | Third-party apps and leftovers the tablet shipped with.
+== preloads | hide | Preinstalled extras | Third-party apps and leftovers the device shipped with.
 com.facebook.katana | remove | Facebook | The Facebook app.
 com.facebook.appmanager | remove | Facebook App Manager | Keeps Facebook apps installed and updated in the background.
 com.facebook.services | remove | Facebook Services | Background services for Facebook apps.
@@ -28,6 +30,12 @@ com.android.egg | remove | Android Easter egg | The hidden game in Settings > Ab
 com.android.dreams.phototable | remove | Photo Table screensaver | A screensaver that shows your photos.
 com.touchtype.swiftkey | remove | SwiftKey keyboard | Microsoft's keyboard. The one in use is never hidden: allow another under Privacy and security, then switch to it.
 com.swiftkey.swiftkeyconfigurator | remove | SwiftKey setup helper | Sets SwiftKey up as the keyboard.
+com.ironsource.appcloud.oobe.huawei | remove | App suggestions at setup | Advertising company's app that pushes other apps.
+com.kikaoem.hw.qisiemoji.inputmethod | hide | Kika keyboard | A third-party keyboard. The one in use is never hidden.
+com.nuance.swype.emui | hide | Swype | Swipe typing add-on. The keyboard in use is never hidden.
+com.baidu.input_huawei | hide | Baidu keyboard | Chinese keyboard with wide permissions. The one in use is never hidden.
+com.kmsjp | hide | Kaspersky (Japan) | Preinstalled antivirus.
+com.tencent.qqlivehuawei | hide | Tencent video add-on | Video player add-on with nothing you need.
 
 == honor-services | hide | HONOR background services | Telemetry, cloud and update services that run without you opening anything.
 com.hihonor.android.pushagent | remove | HONOR Push | HONOR's own push-message channel. Google's push service still works.
@@ -36,14 +44,14 @@ com.hihonor.autoinstallapkfrommcc | remove | Regional auto-installer | Installs 
 com.hihonor.systemappsupdater | remove | HONOR app updater | Updates HONOR's apps from the cloud. System updates still work.
 com.hihonor.magazine | remove | Magazine Unlock | Downloads lock-screen pictures and content.
 com.hihonor.browserhomepage | remove | Browser homepage | News feed and homepage content for the browser.
-com.hihonor.numberidentity | remove | Caller ID | Online caller identification and yellow pages.
-com.hihonor.carrierlocation | remove | Carrier location | Location lookups for mobile networks. Not needed on a Wi-Fi tablet.
+com.hihonor.numberidentity | remove-nosim | Caller ID | Online caller identification and yellow pages.
+com.hihonor.carrierlocation | remove-nosim | Carrier location | Location lookups for mobile networks. Not needed without mobile service, so devices with a SIM keep it by default.
 com.hihonor.languagedownloader | remove | Language downloader | Downloads extra language packs.
 com.hihonor.printservice | remove | HONOR print service | HONOR's printer plug-in.
 com.hihonor.mmitest | remove | Factory hardware test | The factory test menu.
 com.hihonor.android.projectmenu | remove | Engineering menu | Hidden engineering and test settings.
 com.hihonor.detectrepair | remove | Smart Diagnosis | Hardware diagnostics that report to HONOR.
-com.hihonor.pcassistant | remove | HONOR Suite connector | Lets the HONOR PC Suite manage the tablet.
+com.hihonor.pcassistant | remove | HONOR Suite connector | Lets the HONOR PC Suite manage the device.
 com.hihonor.searchservice | remove | HONOR Search service | The background part of HONOR Search.
 com.hihonor.systemmanager | remove | System Manager (Optimiser) | HONOR's battery manager, app-launch control, cleaner, antivirus and data monitor. Its screens in Settings stop working; choose Leave to bring it back.
 com.hihonor.hiview | remove | System log collector | Collects system logs. Test for a day after removing it.
@@ -53,7 +61,7 @@ com.hihonor.lbs | remove | HONOR location | HONOR's own location service. Check 
 com.hihonor.trustcircle | remove | Trusted circle | Device-trust service used by Find Device.
 
 == honor-apps | hide | HONOR apps | Apps you can replace with your own choice.
-com.hihonor.android.launcher | leave | HONOR Home | HONOR's home screen. Leave it: on this tablet it also runs the swipe-up gestures and Recents, so hiding it breaks them even with Lawnchair as the home screen. Lawnchair can be your home screen with this left alone.
+com.hihonor.android.launcher | leave | HONOR Home | HONOR's home screen. Leave it: on HONOR devices it also runs the swipe-up gestures and Recents, so hiding it breaks them even with Lawnchair as the home screen. Lawnchair can be your home screen with this left alone.
 com.hihonor.phoneservice | remove | My HONOR | Support, offers and account app.
 com.hihonor.tips | remove | Tips | Feature tips and notifications about them.
 com.hihonor.android.totemweather | remove | Weather | HONOR Weather and its widget.
@@ -84,12 +92,12 @@ com.hihonor.android.instantshare | remove | HONOR Share | Wireless sharing with 
 com.hihonor.controlcenter | remove | Connect control centre | Device-connection panel in the control centre.
 com.hihonor.airlink | remove | AirLink | Quick pairing with HONOR devices.
 com.hihonor.android.wfdft | remove | Wi-Fi Direct transfer | File transfer over Wi-Fi Direct.
-com.hihonor.associateassistant | remove | Associate assistant | Links the tablet with your other HONOR devices.
+com.hihonor.associateassistant | remove | Associate assistant | Links the device with your other HONOR devices.
 com.hihonor.synergy | remove | Synergy | Shared clipboard and apps across HONOR devices.
 com.hihonor.handoff | remove | Handoff | Continue a task on another HONOR device.
 com.hihonor.iconnect | remove | iConnect | Connection service for HONOR accessories.
 com.hihonor.nearby | remove | Nearby | Finds HONOR devices nearby.
-com.hihonor.dmsdp | remove | Distributed devices | Lets other HONOR devices use the tablet's camera, mic and screen.
+com.hihonor.dmsdp | remove | Distributed devices | Lets other HONOR devices use the device's camera, mic and screen.
 com.hihonor.devicegroupmanage | remove | Device groups | Keeps track of your HONOR devices.
 com.hihonor.cooperatedconfig | remove | Cooperation settings | Settings for multi-device features.
 com.hihonor.desktop.explorer | remove | PC-mode explorer | File explorer for the PC-style desktop.
@@ -116,23 +124,253 @@ com.google.android.marvin.talkback | leave | Android Accessibility Suite | TalkB
 
 == google-setup | hide | Google setup and telemetry | Parts only used during first setup, plus Google's reporting. Your account, Play Store and Google services keep working.
 com.google.android.setupwizard | hide | Setup Wizard | The first-setup screens. Still runs in the background afterwards.
-com.google.android.partnersetup | hide | Partner Setup | Tells Google which manufacturer and region the tablet is from.
+com.google.android.partnersetup | hide | Partner Setup | Tells Google which manufacturer and region the device is from.
 com.google.android.apps.restore | hide | Restore | Copies apps and data from an old device during setup.
 com.google.android.apps.setupwizard.searchselector | hide | Search-engine chooser | The "choose your search engine" screen from setup.
 com.google.android.onetimeinitializer | hide | One-time initialiser | Sets Google defaults on first boot, then does nothing.
 com.google.mainline.telemetry | remove | Mainline telemetry | Reports how Google Play system updates install. The updates keep working.
 
-== android-extras | hide | Android extras | Parts of Android a Wi-Fi tablet barely uses.
-com.android.bookmarkprovider | remove | Bookmark provider | Bookmarks for Android's old built-in browser, which this tablet doesn't have.
+== android-extras | hide | Android extras | Parts of Android a Wi-Fi-only device barely uses. The calling and messaging parts are left alone until you choose.
+com.android.bookmarkprovider | remove | Bookmark provider | Bookmarks for Android's old built-in browser, which this device doesn't have.
 com.android.wallpaper.livepicker | remove | Live-wallpaper picker | Chooses animated wallpapers. Still wallpapers don't need it.
 com.android.printspooler | leave | Print spooler | Android's printing service. Printing stops if you hide it.
 com.google.android.printservice.recommendation | leave | Print-service finder | Suggests printer plug-ins.
 com.android.dreams.basic | leave | Basic screensaver | The colour-cycling screensaver shown while charging.
 com.android.dynsystem | leave | Dynamic System Updates | Boots test versions of Android. Needs an unlocked bootloader, so it can't be used here.
-com.android.incallui | leave | In-call screen | The phone-call screen. Unused on a Wi-Fi tablet; test a WhatsApp or Signal call after hiding it.
+com.android.incallui | leave | In-call screen | The phone-call screen. Unused on a Wi-Fi-only device; test a WhatsApp or Signal call after hiding it.
 com.android.mms.service | leave | MMS service | Picture messages over a mobile network.
 com.android.ons | leave | Opportunistic network service | Switches between mobile networks. The phone service expects it.
-com.google.android.cellbroadcastreceiver | leave | Emergency alerts | Government alerts sent over mobile networks, which a Wi-Fi tablet can't receive.
+com.google.android.cellbroadcastreceiver | leave | Emergency alerts | Government alerts sent over mobile networks, which a Wi-Fi-only device can't receive.
+
+== honor-more | hide | More HONOR apps and services | Found on other HONOR phones and tablets. Only the ones on this device are shown.
+com.hihonor.aipluginengine | hide | Assistant engine | Background part of HONOR's assistant and lens features.
+com.hihonor.android.chr | hide | Connection logging | Records network and call quality for HONOR.
+com.hihonor.android.hnupgradeguide | hide | App Market guide | First-run tour for HONOR's app store.
+com.hihonor.appmarket | hide | HONOR App Market | HONOR's app store. Apps from it stop updating once hidden.
+com.hihonor.assetsync | hide | Cloud asset sync | Syncs with HONOR Cloud.
+com.hihonor.assetsyncservice | hide | Cloud sync helper | Starts the HONOR Cloud sync.
+com.hihonor.collectcenter | hide | Favourites | HONOR's saved-items space.
+com.hihonor.compass | hide | Compass | HONOR's compass app.
+com.hihonor.contacts.sync | hide | Contacts sync | Syncs contacts with your HONOR ID.
+com.hihonor.android.fmradio | hide | FM Radio | HONOR's radio app.
+com.hihonor.gameassistant | hide | Game Suite | Game overlay and game store.
+com.hihonor.hnpanpayservice | hide | Payment service | Background part of HONOR's payments.
+com.hihonor.linktowindowsservice | hide | Link to Windows | Connects to Microsoft's Phone Link on a PC.
+com.hihonor.remotepassword | hide | Remote password | Lets HONOR reset the lock remotely. Collects device details.
+com.hihonor.game.kitserver | leave | Game kit | Game key mapping and overlays. Hide if you don't game.
+com.hihonor.fido.uafclient | leave | Passkey sign-in (FIDO) | Password-free sign-in for some apps and sites.
+com.hihonor.hnasm | leave | Passkey module (FIDO) | Works with Passkey sign-in.
+
+== huawei-era | hide | Older HONOR devices | HONOR devices from before 2021 use Huawei's package names. Untested, so nothing is removed outright: Hide is reversible. Only the ones on this device are shown.
+com.huawei.android.instantshare | hide | Huawei Share | File sharing with other HONOR and Huawei devices.
+com.huawei.android.mirrorshare | hide | Screen mirroring | Mirrors the screen to a TV.
+com.huawei.android.projectmenu | hide | Project menu | Hidden engineering menu.
+com.android.huawei.projectmenu | hide | Project menu | Hidden engineering menu.
+com.huawei.android.pushagent | hide | Huawei Push | Huawei's push channel. Google's push still works.
+com.huawei.browserhomepage | hide | Browser homepage | News feed for the browser.
+com.huawei.desktop.explorer | hide | Desktop mode | Desktop mode on a PC or monitor.
+com.huawei.email | hide | Email | Huawei's email app.
+com.huawei.hiview | hide | Diagnostics | Collects logs and diagnostics.
+com.huawei.hiviewtunnel | hide | Diagnostics upload | Sends logs to the maker. On some devices Gallery uses it for photo details.
+com.huawei.iconnect | hide | PC connect | Offers the PC suite when plugged in.
+com.huawei.magazine | hide | Magazine Unlock | Downloads lock-screen pictures.
+com.huawei.pcassistant | hide | HiSuite connector | Lets the PC suite manage the device.
+com.huawei.phoneservice | hide | HiCare / Support | Support and offers app.
+com.huawei.synergy | hide | Cloud synergy | Cloud features you don't need.
+com.huawei.tips | hide | Tips | Feature tips notifications.
+com.huawei.android.tips | hide | Tips | Feature tips notifications.
+com.huawei.videoeditor | hide | Video editor | Huawei's video editor.
+com.huawei.android.thememanager | hide | Themes | Theme store. The current theme stays.
+com.huawei.calendar | hide | Calendar | Huawei's calendar. Install another first.
+com.huawei.contacts | hide | Contacts | Huawei's contacts app. On phones it may be the dialler too: install another first.
+com.huawei.photos | hide | Gallery | Huawei's gallery. Install another first.
+com.huawei.filemanager | hide | Files | Huawei's file manager. Install another first.
+com.huawei.hidisk | hide | Files | Huawei's file manager. Install another first.
+com.huawei.printservice | hide | Print service | Printing.
+com.huawei.search | hide | Search | System search with history.
+com.huawei.searchservice | hide | Search service | Background part of system search.
+com.huawei.autoinstallapkfrommcc | hide | Regional auto-installer | Installs region-specific apps.
+com.huawei.android.totemweather | hide | Weather | Weather app and widget.
+com.huawei.android.totemweatherapp | hide | Weather | Weather app.
+com.huawei.android.totemweatherwidget | hide | Weather widget | Weather widget.
+com.huawei.android.wfdft | hide | Wi-Fi Direct test | Wi-Fi Direct helper.
+com.huawei.languagedownloader | hide | Language downloader | Downloads extra system languages.
+com.huawei.lbs | hide | Location service | Huawei's location lookups. Google's location still works.
+com.huawei.mmitest | hide | Hardware tests | Hidden factory tests.
+com.huawei.nearby | hide | Nearby | Finds nearby Huawei devices for sharing.
+com.huawei.numberidentity | hide-nosim | Caller ID | Online caller lookup.
+com.huawei.screenrecorder | hide | Screen recorder | Built-in screen recorder.
+com.huawei.trustcircle | hide | Trust circle | Account device checks.
+com.huawei.airlink | hide | Air link | Projection helper.
+com.huawei.audioaccessorymanager | hide | Earbud manager | For Huawei earbuds.
+com.huawei.calculator | hide | Calculator | Huawei's calculator.
+com.huawei.controlcenter | hide | Device+ control | Multi-device control.
+com.huawei.devicegroupmanage | hide | Device groups | Multi-device grouping.
+com.huawei.dmsdp | hide | Distributed devices | Lets other devices use this one's camera, mic and screen.
+com.huawei.notepad | hide | Notepad | Huawei's notes app.
+com.huawei.soundrecorder | hide | Recorder | Huawei's recorder.
+com.huawei.smartshot | hide | Smart screenshot | Scrolling and knuckle screenshots. Normal screenshots keep working.
+com.huawei.android.FloatTasks | leave | Navigation dock | The floating navigation button.
+com.huawei.systemmanager | leave | Phone Manager | Huawei's cleaner and battery settings. Other system parts lean on it.
+com.huawei.android.hsf | hide | Services framework | Installs Huawei service updates in the background.
+com.huawei.android.instantonline | hide | Instant online | Background Huawei service.
+com.huawei.android.chr | hide | Connection logging | Records network and call quality.
+com.huawei.android.hwupgradeguide | hide | AppGallery guide | First-run tour for AppGallery.
+com.huawei.android.hwpay | hide | Huawei Pay | Payments app.
+com.huawei.wallet | hide | Huawei Wallet | Payments app.
+com.huawei.wallet.sdk.walletsdk | hide | Wallet service | Background part of Wallet.
+com.huawei.hwpanpayservice | hide | Payment service | Background part of payments.
+com.huawei.android.karaoke | hide | Karaoke | Karaoke mode.
+com.huawei.android.remotecontroller | hide | Smart remote | IR remote control app.
+com.huawei.android.rftest | hide | RF test | Factory radio test.
+com.huawei.aml | hide | AML | Hidden service with location and SMS access.
+com.huawei.ar.measure | hide | AR Measure | Measuring app.
+com.huawei.arengine.service | hide | AR engine | Augmented reality service.
+com.huawei.assetsync | hide | Cloud asset sync | Syncs with Huawei Cloud.
+com.huawei.assetsyncservice | hide | Cloud sync helper | Starts the Huawei Cloud sync.
+com.huawei.bd | hide | User experience | Usage analytics, starts at boot.
+com.huawei.betaclub | hide | Beta Club | Beta testing and log collection.
+com.huawei.browser | hide | Huawei Browser | Huawei's browser. Install another first.
+com.huawei.ca | hide | CA service | Hidden service with location and task access.
+com.huawei.camerakit.impl | hide | Camera kit | Camera features for other apps. Test the camera after hiding.
+com.huawei.cloud | hide | Cloud desktop | Online desktop service.
+com.huawei.compass | hide | Compass | Compass app.
+com.huawei.contacts.sync | hide | Contacts sync | Syncs contacts with your Huawei ID.
+com.huawei.contactscamcard | hide | Business card reader | Scans business cards into contacts.
+com.huawei.contentsensor | hide | Content sensor | Collects which apps you use and what's on screen.
+com.huawei.cryptosms.service | hide | SMS encryption | Encrypted texts between Huawei phones.
+com.huawei.devicemanager | hide | Linked devices | Huawei ID device management.
+com.huawei.distributed.kms | hide | Distributed keys | Keys for Huawei multi-device features.
+com.huawei.dtmfanalyzer | hide | DTMF analyzer | Background media service.
+com.huawei.easygo | hide | EasyGo | Background service with no clear use.
+com.huawei.fans | hide | Huawei Club | Fan forum app.
+com.huawei.honorclub.android | hide | HONOR Club | Fan forum app.
+com.huawei.featurelayer.sharedfeature.map | hide | Map service | Maps inside Calendar and Gallery.
+com.huawei.gameassistant | hide | Game Suite | Game overlay and game store.
+com.huawei.gamebox | hide | Game Center | Game store.
+com.huawei.geofence | hide | Geofence service | Location triggers.
+com.huawei.health | hide | Huawei Health | Fitness and wearables app.
+com.huawei.hff | hide | HFF | Empty Huawei service.
+com.huawei.hiaction | hide | HiAction | Background Huawei service.
+com.huawei.hiai | hide | HiAI | AI service for Huawei apps.
+com.huawei.hiassistantoversea | hide | HiVoice | Voice assistant.
+com.huawei.vassistant | hide | HiVoice | Voice assistant that listens for its wake word.
+com.huawei.vdrive | hide | Driving mode | Voice driving mode.
+com.huawei.hicar | hide | HiCar | Car connection.
+com.huawei.hicard | hide | Cards | Service cards.
+com.huawei.hicloud | hide | Huawei Cloud | Cloud backup and sync.
+com.huawei.hifolder | hide | Cloud folder | Online folder service.
+com.huawei.hilink.framework | hide | AI Life service | Smart-home scenes.
+com.huawei.smarthome | hide | AI Life | Smart-home app.
+com.huawei.himovie.overseas | hide | Huawei Video | Video app.
+com.huawei.himovie.partner1 | hide | Video add-on | Empty video add-on.
+com.huawei.himovie.partner2 | hide | Video add-on | Empty video add-on.
+com.huawei.hiskytone | hide | SkyTone | Roaming data service.
+com.huawei.skytone | hide | SkyTone service | Roaming data service.
+com.huawei.hisuite | hide | HiSuite | PC suite app.
+com.huawei.hitouch | hide | HiTouch | Shopping lookups for things on screen.
+com.huawei.hms5gkit.agentservice | hide | 5G kit | Developer kit service.
+com.huawei.hwblockchain | hide | Blockchain service | Background Huawei service.
+com.huawei.hwdetectrepair | hide | Smart diagnosis | Runs diagnostics in the background.
+com.huawei.hwdiagnosis | hide | Diagnosis | Sends device diagnostics to Huawei.
+com.huawei.hwireader | hide | Books | Books app with ads.
+com.huawei.hwread.dz | hide | Books | Books app with ads.
+com.huawei.hwpolicyservice | hide | Policy service | Logging service.
+com.huawei.hwsearch | hide | Petal Search | Search widget and app finder.
+com.huawei.hwstartupguide | hide | Setup guide | First-setup screens. Not needed after setup.
+com.huawei.hwvoipservice | hide | MeeTime calling | Calling service for MeeTime.
+com.huawei.meetime | hide | MeeTime | Huawei-to-Huawei video calls.
+com.huawei.hwvplayer.youku | hide | Youku video | Chinese video app.
+com.huawei.indexsearch | hide | Index search | Search indexing.
+com.huawei.indexsearch.observer | hide | Index search watcher | Search indexing.
+com.huawei.intelligent | hide | Huawei Assistant | Suggestions and shopping feed.
+com.huawei.internetaudioservice | hide | Headset control | Smart headset service.
+com.huawei.lives | hide | HiLives | Lifestyle services.
+com.huawei.livewallpaper.artflower | hide | Live wallpaper | Animated wallpaper.
+com.huawei.livewallpaper.flowersbloom | hide | Live wallpaper | Animated wallpaper.
+com.huawei.livewallpaper.mountaincloud | hide | Live wallpaper | Animated wallpaper.
+com.huawei.livewallpaper.naturalgarden | hide | Live wallpaper | Animated wallpaper.
+com.huawei.livewallpaper.paradise | hide | Live wallpaper | Animated wallpaper.
+com.huawei.livewallpaper.ripplestone | hide | Live wallpaper | Animated wallpaper.
+com.huawei.localBackup | hide | Backup | Local backup with wide access.
+com.huawei.localbackup | hide | Backup | Local backup with wide access.
+com.android.mediacenter | hide | Huawei Music | Music app.
+com.huawei.music | hide | Huawei Music | Music app.
+com.huawei.mirror | hide | Mirror | Uses the front camera as a mirror.
+com.android.hwmirror | hide | Mirror | Uses the front camera as a mirror.
+com.huawei.mirrorlink | hide | MirrorLink | Car connection.
+com.huawei.mmiautotest | hide | Hardware autotest | Hidden factory tests.
+com.huawei.runningtestii | hide | Running test | Hidden factory tests.
+com.huawei.systemdebug | hide | System debug | Hidden test tools.
+com.huawei.sarlevel | hide | SAR info | Hidden radiation-level screen.
+com.huawei.multimedia.audioengine | hide | Audio engine kit | Developer audio kit.
+com.huawei.multimedia.hivideoplayengine | hide | Video engine kit | Developer video kit.
+com.huawei.mycenter | hide | Member Center | Rewards and offers with wide permissions.
+com.huawei.ohos.collaborationcenter | hide | Collaboration center | Casting between devices.
+com.huawei.ohos.famanager | hide | Service Center | Service cards and suggestions.
+com.huawei.ohos.hiwindow | hide | HiWindow | Projection window shell.
+com.huawei.onehopsvcclient | hide | OneHop client | Tap-to-share with Huawei laptops.
+com.huawei.onehopsvchost | hide | OneHop host | Tap-to-share with Huawei laptops.
+com.huawei.parentcontrol | hide | Parental controls | Huawei's parental controls. Some devices refuse to hide it.
+com.huawei.pengine | hide | Intelligent suggestions | Reads screens of chosen apps to suggest things.
+com.huawei.profile | hide | Profile service | Huawei ID profile and analytics.
+com.huawei.rcsserviceapplication | hide | Rich messaging | Chat between Huawei phones.
+com.huawei.recsys | hide | Recommendations | Personalised suggestions.
+com.huawei.remotepassword | hide | Remote password | Lets Huawei reset the lock remotely. Collects device details.
+com.huawei.ridemode | hide | Ride mode | Cycling mode.
+com.huawei.scanner | hide | AI Lens | Shopping lookups from the camera.
+com.huawei.stylus.floatmenu | hide | Stylus menu | Floating menu for the stylus.
+com.huawei.scenepack | hide | Travel assistant | Travel tips.
+com.huawei.smartlocation | hide | Indoor positioning | Indoor location service.
+com.huawei.spaceservice | hide | Geofence service | Location triggers.
+com.huawei.suggestion | hide | HiSuggestion | Suggestions widget.
+com.huawei.tipsove | hide | Tips | Feature tips.
+com.huawei.trustagent | hide | Smart unlock | Unlocks with a nearby watch or band. Off is safer.
+com.huawei.trustedthingsauth | hide | Trusted things | Bluetooth authentication for Huawei devices.
+com.huawei.trustspace | hide | TrustSpace | Payment protection add-on.
+com.huawei.userguide | hide | User guide | Built-in manual.
+com.huawei.vrservice | hide | VR service | Huawei VR.
+com.huawei.watch.sync | hide | Watch sync | For Huawei watches.
+com.huawei.waudio | hide | Wi-Fi speaker | Wi-Fi speaker playback.
+com.huawei.welinknow | hide | Link Now | Meetings app.
+com.vmall.client | hide | Vmall | Huawei's shop app.
+com.huawei.HwMultiScreenShot | hide | Scrolling screenshot | Scrolling screenshots. Normal screenshots keep working.
+huawei.android.widget | hide | Widget service | Widgets keep working without it.
+com.bjbyhd.screenreader_huawei | hide | Screen reader | Chinese screen reader. Leave it if you use it.
+com.huawei.regservice | hide-nosim | Network registration | Registers with some mobile networks.
+com.android.huawei.HiMediaEngine | leave | Camera media engine | Camera test features. The camera may use it.
+com.huawei.KoBackup | leave | Backup | Huawei's full backup app.
+com.huawei.android.FMRadio | leave | FM Radio | Radio app.
+com.huawei.android.airsharing | leave | Wireless projection | Casts to a TV.
+com.huawei.android.findmyphone | leave | Find Device | Find and wipe a lost device through your Huawei ID.
+com.huawei.android.wfdirect | leave | Wi-Fi Direct | Direct Wi-Fi links between devices.
+com.huawei.aod | leave | Always On Display | Clock on the off screen.
+com.huawei.appmarket | leave | AppGallery | Huawei's app store. Apps from it stop updating once hidden.
+com.huawei.def | leave | DEF | Messaging keys service.
+com.huawei.desktop.systemui | leave | Desktop mode UI | Desktop mode and a screenshot service.
+com.huawei.distributedpasteboard | leave | Shared clipboard | Clipboard history and drag-and-drop.
+com.huawei.fastapp | leave | Quick apps | Runs mini apps without installing them.
+com.huawei.fido.uafclient | leave | Passkey sign-in (FIDO) | Password-free sign-in for some apps.
+com.huawei.hwasm | leave | Passkey module (FIDO) | Works with Passkey sign-in.
+com.huawei.game.kitserver | leave | Game kit | Game overlays. Hide if you don't game.
+com.huawei.himovie | leave | Huawei Video | Video player.
+com.huawei.hwdockbar | leave | Multi-window dock | The side dock for split screen.
+com.huawei.hwid | leave | HMS Core | Huawei Mobile Services. Huawei apps need it; Google's don't.
+com.huawei.hwusbearphoneupdate | leave | USB earphone updates | Updates Huawei USB-C earphones.
+com.huawei.ihealth | leave | Motion service | Shake and flip gestures, like flipping to silence an alarm.
+com.huawei.imedia.dolby | leave | Dolby Atmos | Sound tuning.
+com.huawei.imonitor | leave | App monitor | Spots app crashes and offers safe mode.
+com.huawei.indiacalendar | leave | Indian calendar | Calendar for India.
+com.huawei.maps.app | leave | Petal Maps | Maps app.
+com.huawei.mediacontroller | leave | Media controls | Media controls in quick settings.
+com.huawei.nb.service | leave | Nearby discovery | Finds nearby devices.
+com.huawei.ohos.inputmethod | leave | Huawei keyboard | The default keyboard. The one in use is never hidden.
+com.huawei.ohos.security.privacycenter | leave | Privacy center widget | Privacy widget.
+com.huawei.security.privacycenter | leave | Privacy center | Strips location from shared photos.
+com.huawei.privatespace | leave | Private space files | Files in the private space.
+com.huawei.sos | leave | Emergency SOS | Emergency calls and messages. Leave it on a phone.
+com.huawei.tmecustomize | leave | Carrier customisation | Carrier settings.
+com.huawei.android.launcher | leave | Huawei Home | The home screen on older HONOR devices. It may also run gestures and Recents, so it stays even with Lawnchair.
 
 == lockdown | lock | Permission locks | For apps that can't be hidden. Their permissions are locked off, so they can't use the camera, location, contacts and so on.
 com.hihonor.id | lock | HONOR ID | HONOR's account service. HONOR protects it from being removed, so its permissions are locked instead.
@@ -161,6 +399,30 @@ com.hihonor.msdp | - | Sensor platform | Sensor and activity recognition.
 com.hihonor.securitypluginbase | - | Security plug-ins | Part of the operating system.
 com.hihonor.keychain | - | Keychain | Saved passwords.
 com.hihonor.permissioncontroller.overlay | - | Permission screens | HONOR's look for permission prompts.
+androidhwext | - | Theme framework | Draws the system's look. Part of the operating system.
+androidhnext | - | Theme framework | Draws the system's look. Part of the operating system.
+com.android.frameworkhwext.honor | - | Theme framework parts | Part of the operating system's look.
+com.android.frameworkhwext.dark | - | Dark theme parts | Part of the operating system's look.
+com.hihonor.ddmp | - | Device data platform | Calls and other system parts depend on it.
+com.huawei.hwddmp | - | Device data platform | Calls and other system parts depend on it.
+com.hihonor.dsdscardmanager | - | SIM card manager | The SIM settings screen.
+com.huawei.android.dsdscardmanager | - | SIM card manager | The SIM settings screen.
+com.huawei.dsdscardmanager | - | SIM card manager | The SIM settings screen.
+com.huawei.ims | - | Calling over 4G | VoLTE calling. Phone calls break without it.
+com.huawei.android.hwaps | - | Display resolution | Screen resolution settings.
+com.huawei.android.overlay.modules.modulemetadata | - | System module list | Part of the operating system.
+com.huawei.android.internal.app | - | Huawei-era framework | Part of the operating system on older HONOR devices.
+com.huawei.systemserver | - | System services | Part of the operating system on older HONOR devices.
+com.huawei.securityserver | - | Security server | Part of the operating system on older HONOR devices.
+com.huawei.securitypluginbase | - | Security plug-ins | Part of the operating system on older HONOR devices.
+com.huawei.permissioncontroller | - | Permission screens | Permission prompts on older HONOR devices.
+com.huawei.permissioncontroller.overlay | - | Permission screens | The look of permission prompts.
+com.huawei.android.hwouc | - | System update | Installs system updates on older HONOR devices.
+com.huawei.iaware | - | iAware | Performance scheduler.
+com.huawei.powergenie | - | Power manager | Battery management.
+com.huawei.bluetooth | - | Bluetooth | Bluetooth on older HONOR devices.
+com.huawei.msdp | - | Sensor platform | Sensor and activity recognition.
+com.huawei.webview | - | Huawei WebView | Shows web pages inside apps on devices that use it.
 
 == keep | keep | Best left alone | HONOR parts that other features depend on. Not shown in the app; add one under Your additions only if you know what breaks.
 com.hihonor.camera | - | Camera | The camera app.
@@ -173,3 +435,27 @@ com.hihonor.behaviorauth | - | Behaviour authentication | Part of the lock scree
 com.hihonor.deviceauth | - | Device authentication | Part of the lock screen's security.
 com.hihonor.coauthservice | - | Collaborative unlock | Part of the lock screen's security.
 com.dts.dtsxultra | - | DTS sound | Speaker tuning.
+com.android.frameworkhwnext.honor | - | Themes framework | The Themes app and wallpapers need it.
+com.huawei.camera | - | Camera | The camera app.
+com.huawei.deskclock | - | Clock | Clock and alarms.
+com.huawei.imedia.sws | - | Sound effects | Audio processing.
+com.huawei.motionservice | - | Motion service | Rotation and motion gestures.
+com.huawei.behaviorauth | - | Behaviour authentication | Part of the lock screen's security.
+com.huawei.deviceauth | - | Device authentication | Part of the lock screen's security.
+com.huawei.coauthservice | - | Collaborative unlock | Part of the lock screen's security, face and fingerprint unlock.
+com.huawei.securitymgr | - | Private space | Holds the hidden private space, if you use one.
+com.huawei.secime | - | Secure keyboard | The keyboard that pops up for password fields.
+com.huawei.harmonyos.foundation | - | Foundation | Calls and Settings depend on it.
+com.huawei.featurelayer.featureframework | - | Feature framework | Other HONOR features load through it.
+com.huawei.androidx | - | Media support | Shared code other system parts load.
+com.huawei.firstbootinfo | - | First-boot info | Region and update details the system reads.
+com.huawei.entitlement | - | Carrier entitlement | Hotspot and carrier features check it.
+com.hihonor.omacp | - | Network setup messages | Sets up mobile data from your carrier's messages.
+com.huawei.omacp | - | Network setup messages | Sets up mobile data from your carrier's messages.
+com.hihonor.wifieapsimplmn | - | SIM Wi-Fi sign-in | Wi-Fi networks that sign in with your SIM.
+com.huawei.wifieapsimplmn | - | SIM Wi-Fi sign-in | Wi-Fi networks that sign in with your SIM.
+com.huawei.wifiprobqeservice | - | Wi-Fi quality service | Part of the Wi-Fi stack.
+com.huawei.manufacture.wificonnect | - | Wi-Fi connect | Part of the Wi-Fi stack.
+com.huawei.hwesimservice | - | eSIM | Needed if you use an eSIM.
+ohos.media.medialibrary | - | Media library | Indexes photos, music and videos for other apps.
+jp.co.omronsoft.iwnnime.ml | - | iWnn keyboard | Japanese keyboard. Some devices need it to unlock.

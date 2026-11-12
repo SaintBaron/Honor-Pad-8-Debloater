@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "honor-pad-8-debloater"
+rootProject.name = "honorless-debloater"
 include(":app")
