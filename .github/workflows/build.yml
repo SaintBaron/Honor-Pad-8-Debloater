@@ -9,10 +9,8 @@ on:
 
 permissions: {}
 
-# One build at a time, so two quick pushes can't race to publish releases.
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: false
+# No workflow-wide queue: a slow runner (GitHub's macOS ones can wait a long time for a free machine) must not
+# hold up the next build. Publishing is serialised instead, in the release job below.
 
 jobs:
   # ---------------------------------------------------------------- the Android app
@@ -67,7 +65,7 @@ jobs:
         run: gradle --no-daemon :app:assembleRelease
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk honor-pad-8-debloater.apk
+        run: cp app/build/outputs/apk/release/app-release.apk honorless-debloater.apk
 
       - name: Remove signing key
         if: always()
@@ -76,10 +74,11 @@ jobs:
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
         with:
           name: apk
-          path: honor-pad-8-debloater.apk
+          path: honorless-debloater.apk
 
   # ------------------------------------------------- the setup tool, packaged per OS
   tool:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -117,11 +116,13 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          sep=":"; mode="--onefile"
-          [ "$RUNNER_OS" = "Windows" ] && sep=";"
-          [ "$RUNNER_OS" = "macOS" ] && mode="--onedir"
-          python -m PyInstaller --noconfirm --clean $mode --windowed --name HonorPad8Debloater-Setup \
+          sep=":"; mode="--onefile"; icon=""
+          [ "$RUNNER_OS" = "Windows" ] && sep=";" && icon="--icon tool/icons/icon.ico"
+          [ "$RUNNER_OS" = "macOS" ] && mode="--onedir" && icon="--icon tool/icons/icon.icns"
+          # The same shield icon as the tablet app: in the file itself (Windows, macOS) and on the window (all).
+          python -m PyInstaller --noconfirm --clean $mode --windowed --name HonorlessDebloater-Setup $icon \
             --add-data "tool/trusted_signer.sha256${sep}." --add-data "tool/build_info.json${sep}." \
+            --add-data "tool/icons/icon.png${sep}icons" \
             --hidden-import certifi tool/debloater_setup.py
 
       - name: Collect
@@ -129,9 +130,9 @@ jobs:
         run: |
           mkdir out
           case "$RUNNER_OS" in
-            Windows) cp dist/HonorPad8Debloater-Setup.exe out/HonorPad8Debloater-Setup-Windows.exe ;;
-            macOS)   (cd dist && ditto -c -k --keepParent HonorPad8Debloater-Setup.app ../out/HonorPad8Debloater-Setup-macOS.zip) ;;
-            Linux)   cp dist/HonorPad8Debloater-Setup out/HonorPad8Debloater-Setup-Linux && chmod +x out/HonorPad8Debloater-Setup-Linux ;;
+            Windows) cp dist/HonorlessDebloater-Setup.exe out/HonorlessDebloater-Setup-Windows.exe ;;
+            macOS)   (cd dist && ditto -c -k --keepParent HonorlessDebloater-Setup.app ../out/HonorlessDebloater-Setup-macOS.zip) ;;
+            Linux)   cp dist/HonorlessDebloater-Setup out/HonorlessDebloater-Setup-Linux && chmod +x out/HonorlessDebloater-Setup-Linux ;;
           esac
 
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
@@ -140,16 +141,20 @@ jobs:
           path: out/*
 
   # ------------------------------------------------------------------- the release
+  # Published as soon as the app is built, so the tablet's self-update gets it without waiting for the setup tools.
   release:
-    needs: [apk, tool]
+    needs: [apk]
     runs-on: ubuntu-latest
+    concurrency:
+      group: publish-${{ github.ref }}   # one publish at a time, so two quick pushes can't race
+      cancel-in-progress: false
     permissions:
       contents: write   # needed to publish the release
     steps:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
+          name: apk
           path: dist
-          merge-multiple: true
 
       - name: Publish release v1.0.N
         env:
@@ -167,13 +172,40 @@ jobs:
 
           | Your computer | Download |
           |---|---|
-          | Windows | \`HonorPad8Debloater-Setup-Windows.exe\` |
-          | Mac (Apple silicon) | \`HonorPad8Debloater-Setup-macOS.zip\` |
-          | Linux | \`HonorPad8Debloater-Setup-Linux\` |
+          | Windows | \`HonorlessDebloater-Setup-Windows.exe\` |
+          | Mac (Apple silicon) | \`HonorlessDebloater-Setup-macOS.zip\` |
+          | Linux | \`HonorlessDebloater-Setup-Linux\` |
 
-          The tool installs (or updates) \`honor-pad-8-debloater.apk\` on the tablet for you. \`SHA256SUMS.txt\` lists every file's checksum.
+          The tool installs (or updates) \`honorless-debloater.apk\` on the tablet for you. \`SHA256SUMS.txt\` lists every file's checksum.
+          The setup tools are added a few minutes after the app; if one isn't here yet, check back shortly.
           Full guide: see the README.
           EOF
           sed -i 's/^          //' notes.md
-          gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "Honor Pad 8 Debloater $tag" \
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "Honorless Debloater $tag" \
             --notes-file notes.md --latest
+
+  # Adds the setup tools to the release once they're built. A tool that failed or never got a machine is left out
+  # (the others are still added), and SHA256SUMS.txt is rewritten to cover everything that's there.
+  attach-tools:
+    needs: [release, tool]
+    if: ${{ always() && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Add the setup tools to v1.0.N
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="v1.0.${GITHUB_RUN_NUMBER}"
+          ls -la dist
+          tools=$(cd dist && ls HonorlessDebloater-Setup-* 2>/dev/null || true)
+          if [ -z "$tools" ]; then echo "::warning::No setup tools were built this time."; exit 0; fi
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          (cd dist && gh release upload "$tag" $tools SHA256SUMS.txt --clobber)
