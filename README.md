@@ -278,22 +278,23 @@ to replace HONOR's home screen and keyboard. **Yes, replace them** does all of t
 **No thanks** hides the offer; **Replace home screen and keyboard** in the Apps card does the same later. To undo any
 part: choose **Leave** for SwiftKey, **Stop locking the home screen**, or switch keyboard.
 
-**HONOR Home stays installed.** On this tablet it also runs the swipe-up gestures and the Recents screen, and hiding it
-breaks them even with Lawnchair as the home screen (confirmed on a real tablet). With Lawnchair locked as the home screen,
-HONOR Home only works in the background. Earlier versions hid it; updating sets it back to **Leave** once.
+**HONOR Home is never hidden.** It also runs the swipe-up gestures and the Recents screen, and hiding it breaks them
+even with Lawnchair as the home screen (confirmed on a real tablet). With Lawnchair locked as the home screen, HONOR Home
+only works in the background. Earlier versions could hide it, and the device keeps it hidden even after that app is
+gone: the setup tool and the app both bring it back.
 
 - **F-Droid.** **Install F-Droid** downloads it from f-droid.org and installs it without a prompt, once it's checked.
   F-Droid keeps itself and the apps you get from it up to date.
 - **Lawnchair.** **Install Lawnchair** gets the newest release from Lawnchair's GitHub page (they're all marked beta;
   nightly test builds are skipped). **Make it the home screen** locks the home button to Lawnchair, so HONOR can't switch it
   back; **Stop locking the home screen** undoes it. While it's locked as the home screen it can't be uninstalled, so
-  the tablet can't be left without one. **Update it automatically** (on by default) checks once a day.
+  the tablet can't be left without one. **Update it automatically** (on by default) checks twice a day.
 - **HeliBoard.** An open-source keyboard with no internet access. **Install HeliBoard** gets the newest stable release
   (pre-releases are skipped) from HeliBoard's GitHub page (`HeliBorg/HeliBoard`). **Use it as the keyboard** allows it and switches to it, and
-  SwiftKey is then removed. **Update it automatically** (on by default) checks once a day.
+  SwiftKey is then removed. **Update it automatically** (on by default) checks twice a day.
 
 - **Honorless Debloater.** The app can update itself: **Check for an update** gets the newest release from this
-  project's own GitHub Releases page, and **Update it automatically** (on by default) checks once a day. Updating
+  project's own GitHub Releases page, and **Update it automatically** (on by default) checks twice a day. Updating
   closes the app's screen (open it again afterwards); the background checks carry on by themselves and your choices
   are kept. Only a copy built by this
   repository's GitHub Actions with the project's signing key can do this; a local or debug build says to use the setup
@@ -432,7 +433,7 @@ Google's setup leftovers: Setup Wizard, Partner Setup, Restore, the search-engin
 
 ### In the app, left alone by default
 
-HONOR Home (it runs the swipe gestures), HONOR's side dock and floating windows; Chrome, YouTube, Google Photos, Speech Services, the Accessibility Suite;
+HONOR's side dock and floating windows; Chrome, YouTube, Google Photos, Speech Services, the Accessibility Suite;
 the print spooler and print-service finder; the basic screensaver, Dynamic System Updates; and the mobile-network
 parts a Wi-Fi tablet doesn't use (in-call screen, MMS service, opportunistic network service, emergency alerts).
 
@@ -450,9 +451,8 @@ Some side effects to be aware of:
   it's your keyboard**. The easy way to replace it is HeliBoard under **Apps**. With another keyboard: choose **Allow**
   for it under **Approve keyboards and accessibility apps**, then under **Keyboard** (Privacy and security) tap
   **Keyboard settings** to turn it on and **Change keyboard** to switch. SwiftKey is removed as soon as you switch.
-- **HONOR Home (the launcher)**: leave it. It also runs the swipe-up gestures and Recents, and hiding it breaks them
-  even with Lawnchair as the home screen. If it ever gets hidden and you can't get around the tablet, this brings it
-  back from a computer: `adb shell pm unhide com.hihonor.android.launcher`
+- **HONOR Home (the launcher)**: it's never hidden, because it runs the swipe-up gestures and Recents. If swiping up
+  ever stops working, this brings it back from a computer: `adb shell pm unhide com.hihonor.android.launcher`
 - **HONOR location**: check a maps app still finds you afterwards. Google's location service takes over.
 - **HONOR Gallery**: install another gallery first (Fossify Gallery or Aves on F-Droid), or the camera's thumbnail has
   nothing to open.
@@ -474,8 +474,9 @@ doesn't get a screen full of tablet apps it hasn't got. On top of the Honor Pad 
 
 **Phones and SIM tablets.** A few defaults only apply to devices without mobile service: Caller ID, carrier location
 and network registration helpers are hidden or removed on Wi-Fi-only devices and left alone on anything with a SIM
-slot. The calling and messaging parts of Android (in-call screen, MMS, emergency alerts) are always left alone until
-you choose.
+slot. Contacts is left alone there too, since on HONOR phones it's usually also the Phone app. The calling and
+messaging parts of Android (in-call screen, MMS, emergency alerts) are always left alone until you choose, and on a
+device with mobile service whichever apps you use for calls and texts are never hidden, even if you list them.
 
 **On an older HONOR device**, Huawei Home stays for the same reason HONOR Home does (it can run the gestures and
 Recents), and the home screen in use is never hidden. If something stops working, choose **Leave** for it, or bring a
@@ -502,14 +503,19 @@ becomes unusable, see [Troubleshooting](#troubleshooting).
 Every change to this project publishes a new numbered release (`v1.0.N`). Updates keep your lists and settings, and you
 **don't** need to remove your accounts again.
 
-**The app updates itself.** Once a day it checks this project's Releases page and installs a newer version on its own,
-with no computer and no prompt (see [Apps](#apps) to check now, or to turn this off). It only installs a release signed
-with the project's key, and never an older one. This needs a copy installed from a release built on GitHub (v1.0.N with
+**The app updates itself.** Twice a day, and about 10 minutes after every restart, it checks this project's Releases
+page and installs a newer version on its own, with no computer and no prompt (see [Apps](#apps) to check now, see when
+it last checked, or turn this off). It only installs a release signed with the project's key, and never an older one;
+it doesn't download anything when it's already up to date. If Android fails an install for an ordinary reason (no
+space, say), it tries again at the next check. This needs a copy installed from a release built on GitHub (v1.0.N with
 this feature, or later): the first time, update it one of the ways below.
 
-**The setup tool tells you when it's out of date.** When you open it, the first page offers **Download it** if there's a
-newer version. It saves the new tool for your computer into your Downloads folder, checks it against the release's
-`SHA256SUMS.txt`, and opens the folder. Close the old one and run the new one; you can delete the old copy.
+**The setup tool updates itself too.** When you open it and there's a newer version, it downloads the build for your
+computer, checks it against the release's `SHA256SUMS.txt`, swaps it in where the tool is, and restarts. This only
+happens on the first page, before anything is done to the device. Untick **Update this tool automatically** to be
+asked instead (**Update now**). If the tool is somewhere you can't write to (an admin-only folder, a read-only disk),
+it offers **Download it** instead, which saves the new copy in your Downloads folder. Running it from source? Use
+`git pull`. The same release is never auto-installed twice, so a broken release can't get stuck restarting.
 
 Other ways to update the app:
 
@@ -572,7 +578,7 @@ pass all of these before it's installed:
 - **Size and format.** Downloads are capped in size and saved only in the app's private storage, then deleted. Release
   information is read with a strict parser that rejects anything malformed.
 
-Requests carry no cookies, IDs or tablet details, just a generic user agent. The automatic updates check once a day,
+Requests carry no cookies, IDs or tablet details, just a generic user agent. The automatic updates check twice a day and after a restart,
 only when there's a network, and only if **Update it automatically** is on (and, for Lawnchair and HeliBoard, only if they're installed).
 A release is only downloaded once; one that fails the checks isn't retried.
 

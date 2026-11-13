@@ -162,7 +162,7 @@ class MainActivity : Activity() {
         val settingKeys = listOf(Store.S_BACKUP_OFF, Store.S_NO_AI_CAPTURE, Store.S_NO_NEW_USERS, Store.S_APPROVE_INPUT,
             Store.S_REDACT_LOCKSCREEN, Store.S_NO_DEBUGGING, Store.S_NO_SMART_LOCK, Store.S_USB_CHARGE_ONLY,
             Store.S_DNS, Store.S_VPN, Store.S_LAWNCHAIR_AUTO, Store.S_HOME,
-            Store.S_SELF_AUTO, Store.S_HELI_AUTO, Store.S_REPLACE_OFFER)
+            Store.S_SELF_AUTO, Store.S_HELI_AUTO, Store.S_REPLACE_OFFER, Store.S_SELF_CHECKED, Store.S_SELF_RESULT)
         @Suppress("DEPRECATION")
         val version = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
         return Model(
@@ -788,8 +788,11 @@ class MainActivity : Activity() {
             body.addView(ui.button("Check for an update", Ui.Kind.PRIMARY) {
                 run({ ownerOnly { online("github.com") { enforcer.installer().let { it.install(it.self!!, it.latestSelf()) } } } })
             }, ui.lp(WRAP, top = 8))
-            body.addView(onOffRow("Update it automatically", "Checks once a day. This screen closes when it updates (open it again); your choices are kept.",
+            body.addView(onOffRow("Update it automatically", "Checks twice a day and after a restart. This screen closes when it updates (open it again); your choices are kept.",
                 Store.S_SELF_AUTO, m.setting(Store.S_SELF_AUTO, "on") == "on"), ui.lp(top = 6))
+            val checked = m.setting(Store.S_SELF_CHECKED, "").toLongOrNull()
+            body.addView(ui.muted(if (checked == null) "Not checked automatically yet. The first check runs within 12 hours, or after a restart."
+                else "Last checked ${friendlyTime(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.UK).format(Date(checked)))}: ${m.setting(Store.S_SELF_RESULT, "")}", 12f), ui.lp(top = 4))
         } else {
             body.addView(ui.muted("This copy wasn't built on GitHub, so it can't update itself. Use the setup tool to update it."), ui.lp(top = 6))
         }
@@ -816,7 +819,7 @@ class MainActivity : Activity() {
             })
         }
         body.addView(row, ui.lp(top = 8))
-        body.addView(onOffRow("Update it automatically", "Checks once a day and installs new releases without asking.",
+        body.addView(onOffRow("Update it automatically", "Checks twice a day and installs new releases without asking.",
             Store.S_LAWNCHAIR_AUTO, m.setting(Store.S_LAWNCHAIR_AUTO, "on") == "on"), ui.lp(top = 6))
 
         // HeliBoard
@@ -833,7 +836,7 @@ class MainActivity : Activity() {
             })
         }
         body.addView(heliRow, ui.lp(top = 8))
-        body.addView(onOffRow("Update it automatically", "Checks once a day and installs new stable releases without asking.",
+        body.addView(onOffRow("Update it automatically", "Checks twice a day and installs new stable releases without asking.",
             Store.S_HELI_AUTO, m.setting(Store.S_HELI_AUTO, "on") == "on"), ui.lp(top = 6))
 
         // both at once

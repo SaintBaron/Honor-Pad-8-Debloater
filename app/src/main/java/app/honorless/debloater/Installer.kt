@@ -159,6 +159,12 @@ class Installer(
         autoUpdateSelf()
     }
 
+    /** Shown under "Update it automatically", so you can see it's working (or why it isn't). */
+    private fun recordSelfCheck(result: String) {
+        store.setSetting(Store.S_SELF_CHECKED, System.currentTimeMillis().toString())
+        store.setSetting(Store.S_SELF_RESULT, result.take(160))
+    }
+
     /**
      * Install [app] and wait until Android has finished (installing is asynchronous). Returns true once it's
      * installed at that version or newer, false if it didn't finish within [timeoutMs].
@@ -179,21 +185,56 @@ class Installer(
     /** Update this app if there's a newer release and its automatic updates are on. */
     fun autoUpdateSelf(): String? {
         if (store.setting(Store.S_SELF_AUTO, "on") != "on" || self == null) return null
-        val c = latestSelf()
+        val c = try {
+            latestSelf()
+        } catch (e: Exception) {
+            recordSelfCheck("Couldn't check: ${e.message}")
+            throw e
+        }
+        // Already this version or newer (say the setup tool installed it): nothing to download.
+        val mine = installedVersion(ctx.packageName)
+        val theirs = tagBuild(c.label)
+        if (mine != null && theirs != null && theirs <= mine) {
+            recordSelfCheck("Up to date (the newest is ${c.label})")
+            return null
+        }
         val before = store.setting(Store.S_SELF_TAG, "")
-        if (before == c.label) return null
+        if (before == c.label) {
+            recordSelfCheck("${c.label} is out, but it was refused earlier (see the log). Waiting for the next release.")
+            return null
+        }
         // Recorded first: installing replaces this app and ends this process, so nothing after it may run.
+        // If Android then fails the install for an ordinary reason, PackageResultReceiver clears it to retry.
         store.setSetting(Store.S_SELF_TAG, c.label)
+        recordSelfCheck("Updating to ${c.label}…")
         store.log("self-update: trying ${c.label}")
         return try {
             install(self!!, c)
         } catch (e: SecurityException) {
             store.log("self-update (${c.label}) refused: ${e.message}")
+            recordSelfCheck("${c.label} was refused: ${e.message}")
             throw e                                  // stays recorded: a release that fails the checks isn't retried
         } catch (e: Exception) {
             store.setSetting(Store.S_SELF_TAG, before)   // network trouble: try this release again next time
+            recordSelfCheck("Couldn't download ${c.label}: ${e.message}")
             throw e
         }
+    }
+
+    /** After Android reports an install failed: clear the remembered release so the next check tries it again,
+     *  unless the failure was about the app itself (wrong key, wrong app), which retrying won't fix. */
+    fun installFailed(pkg: String, status: Int) {
+        if (status == PackageInstaller.STATUS_FAILURE_INCOMPATIBLE || status == PackageInstaller.STATUS_FAILURE_INVALID) return
+        val key = when (pkg) {
+            ctx.packageName -> Store.S_SELF_TAG
+            lawnchair.pkg -> Store.S_LAWNCHAIR_TAG
+            heliboard.pkg -> Store.S_HELI_TAG
+            else -> return
+        }
+        if (store.setting(key, "").isEmpty()) return
+        store.setSetting(key, "")
+        if (pkg == ctx.packageName) recordSelfCheck("The last update didn't install (status $status). It's tried again next time.")
+        store.log("$pkg didn't install (status $status): will try that release again")
     }
 
     /** Run by the daily job: update Lawnchair if it's installed, auto-update is on, and there's a newer release. */
@@ -286,6 +327,9 @@ class Installer(
         private val SELF_TAG = Regex("^v1\\.0\\.[0-9]{1,9}$")
 
         /** The app's own release: tag v1.0.N, and the APK file inside that release of this repository. */
+        /** v1.0.N -> N (this app's version code), or null for anything else. */
+        fun tagBuild(tag: String): Long? = Regex("v1\\.0\\.([0-9]{1,9})").matchEntire(tag)?.groupValues?.get(1)?.toLongOrNull()
+
         fun selfCandidate(js: Map<*, *>, repo: String): Candidate {
             val tag = js["tag_name"] as? String ?: throw Net.NetError("GitHub didn't say which version is newest")
             if (!SELF_TAG.matches(tag) || js["draft"] == true) throw Net.NetError("unexpected release name \"$tag\"")

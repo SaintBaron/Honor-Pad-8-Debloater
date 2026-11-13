@@ -169,6 +169,8 @@ class Enforcer(context: Context) {
             "com.hihonor.systemserver", "com.hihonor.securityserver", "com.hihonor.securitypluginbase",
             "com.hihonor.permissioncontroller.overlay", "com.hihonor.keychain", "com.hihonor.ouc",
             "com.hihonor.iaware", "com.hihonor.powergenie", "com.hihonor.msdp", "com.hihonor.bluetooth",
+            // HONOR's home screens: they run the swipe gestures and Recents, even with another home screen in use
+            "com.hihonor.android.launcher", "com.huawei.android.launcher",
             // Older HONOR devices (Huawei-era package names) and the theme framework
             "androidhwext", "androidhnext", "com.android.frameworkhwext.honor", "com.android.frameworkhwext.dark",
             "com.huawei.android.internal.app", "com.huawei.systemserver", "com.huawei.securityserver",
@@ -369,7 +371,27 @@ class Enforcer(context: Context) {
         val m = mutableMapOf<String, String>()
         defaultHome()?.let { m[it] = "home screen" }
         defaultIme()?.let { m[it] = "keyboard" }
+        // On phones and SIM tablets, HONOR's Contacts is usually also the Phone app: never hide whatever makes calls
+        // and texts work. (Wi-Fi-only devices skip this, so their tested lists are unchanged.)
+        if (Catalogue.hasMobileService(ctx)) {
+            defaultDialer()?.let { m.putIfAbsent(it, "phone app") }
+            defaultSms()?.let { m.putIfAbsent(it, "messaging app") }
+        }
         return m
+    }
+
+    @Suppress("DEPRECATION")
+    private fun defaultDialer(): String? = try {
+        pm.resolveActivity(Intent(Intent.ACTION_DIAL), PackageManager.MATCH_DEFAULT_ONLY)
+            ?.activityInfo?.packageName?.takeIf { it != "android" }   // "android" = the app chooser: no default
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun defaultSms(): String? = try {
+        android.provider.Telephony.Sms.getDefaultSmsPackage(ctx)
+    } catch (e: Exception) {
+        null
     }
 
     @Suppress("DEPRECATION")
@@ -435,6 +457,7 @@ class Enforcer(context: Context) {
             store.log("couldn't merge new defaults (carrying on): ${e.message}")
         }
         restoreHonorHomeOnce()
+        keepHonorHomeVisible()
         // Never leave the device without a home screen: unless some home screen app is off the lists,
         // every home screen app (and HONOR's own) is kept, and HONOR's comes back if it was hidden.
         val listed = (store.readList(Store.BLOCK) + store.readList(Store.REMOVE)).toSet()
@@ -773,6 +796,29 @@ class Enforcer(context: Context) {
         if (store.setting(Store.S_REPLACE_OFFER, "") == "yes" && store.choiceOf(HONOR_HOME) != Catalogue.Choice.LEAVE) {
             store.setChoice(HONOR_HOME, Catalogue.Choice.LEAVE, "HONOR Home")
             store.log("HONOR Home set back to Leave: hiding it breaks swipe gestures and Recents on this device")
+        }
+    }
+
+    /**
+     * HONOR's own home screen runs the swipe-up gestures and Recents, even when another home screen is in use, so
+     * it's never hidden. Older versions could hide it (and the device keeps it hidden after that app is gone):
+     * bring it back and take it off the lists.
+     */
+    private fun keepHonorHomeVisible() {
+        for (h in HONOR_HOMES) {
+            if (store.choiceOf(h) != Catalogue.Choice.LEAVE) {
+                store.setChoice(h, Catalogue.Choice.LEAVE, h)
+                store.log("$h taken off the lists: hiding it breaks swiping up and Recents")
+            }
+            try {
+                val wasHidden = hidden(h)
+                if (wasHidden) dpm.setApplicationHidden(admin, h, false)
+                val wasSuspended = suspended(h)
+                if (wasSuspended) dpm.setPackagesSuspended(admin, arrayOf(h), false)
+                if (wasHidden || wasSuspended) store.log("brought back $h: swiping up and Recents need it")
+            } catch (e: Exception) {
+                store.log("couldn't bring back $h: ${e.message}")
+            }
         }
     }
 

@@ -30,7 +30,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -53,6 +53,7 @@ CORE_PACKAGES = {
     "com.hihonor.systemserver", "com.hihonor.securityserver", "com.hihonor.securitypluginbase",
     "com.hihonor.permissioncontroller.overlay", "com.hihonor.keychain", "com.hihonor.ouc",
     "com.hihonor.iaware", "com.hihonor.powergenie", "com.hihonor.msdp", "com.hihonor.bluetooth",
+    "com.hihonor.android.launcher", "com.huawei.android.launcher",
     "androidhwext", "androidhnext", "com.android.frameworkhwext.honor", "com.android.frameworkhwext.dark",
     "com.huawei.android.internal.app", "com.huawei.systemserver", "com.huawei.securityserver",
     "com.huawei.securitypluginbase", "com.huawei.permissioncontroller", "com.huawei.permissioncontroller.overlay",
@@ -424,6 +425,10 @@ def attribute(packages: Dict[str, Package], procs: List[Process],
 def run_scan(adb: ds.Adb, progress=print, settings: bool = True) -> Scan:
     info = ds.read_tablet_info(adb)
     tablet = " ".join(x for x in (info.brand, info.model) if x) + (f", Android {info.android}" if info.android else "")
+    # Whether the device has mobile service decides a few defaults (see "-nosim" in the catalogue).
+    _, feats = adb.shell("pm list features", quiet=True)
+    if "feature:" in feats:
+        tablet += ", mobile service" if "feature:android.hardware.telephony" in feats.split() else ", Wi-Fi only"
 
     progress("Reading the package list…")
     _, dump = adb.shell("dumpsys package packages", quiet=True, timeout=120)
@@ -749,7 +754,7 @@ def debloater_state(scan: Scan) -> List[Tuple[str, str, bool]]:
     mine = st.jobs.get(SELF, [])
     ids = {j.split(":")[0] for j in mine}
     rows.append(("6-hourly check", "scheduled" if "1" in ids else "NOT scheduled: open the app once to set it up again", "1" in ids))
-    rows.append(("Daily app updates", "scheduled" if "3" in ids else "not scheduled", "3" in ids))
+    rows.append(("Automatic app updates (twice a day)", "scheduled" if "3" in ids else "not scheduled", "3" in ids))
     uid = scan.packages[SELF].uid if SELF in scan.packages else None
     policy = st.uid_policies.get(uid) if uid is not None else None
     rows.append(("Background data for the app", f"restricted ({policy})" if policy else "allowed (as far as Android's own setting goes)", not policy))

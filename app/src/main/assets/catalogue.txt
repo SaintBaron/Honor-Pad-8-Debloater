@@ -61,7 +61,6 @@ com.hihonor.lbs | remove | HONOR location | HONOR's own location service. Check 
 com.hihonor.trustcircle | remove | Trusted circle | Device-trust service used by Find Device.
 
 == honor-apps | hide | HONOR apps | Apps you can replace with your own choice.
-com.hihonor.android.launcher | leave | HONOR Home | HONOR's home screen. Leave it: on HONOR devices it also runs the swipe-up gestures and Recents, so hiding it breaks them even with Lawnchair as the home screen. Lawnchair can be your home screen with this left alone.
 com.hihonor.phoneservice | remove | My HONOR | Support, offers and account app.
 com.hihonor.tips | remove | Tips | Feature tips and notifications about them.
 com.hihonor.android.totemweather | remove | Weather | HONOR Weather and its widget.
@@ -76,7 +75,7 @@ com.hihonor.android.thememanager | remove | Themes | Theme and wallpaper store. 
 com.hihonor.filemanager | remove | Files | File manager. Install another file manager first.
 com.hihonor.calendar | remove | Calendar | Calendar app. Install another calendar first.
 com.hihonor.calculator | remove | Calculator | Calculator. Install another calculator first.
-com.hihonor.contacts | remove | Contacts | Contacts app. Your Google contacts still sync.
+com.hihonor.contacts | remove-nosim | Contacts | Contacts app. Your Google contacts still sync. On phones it's usually the Phone app too, so it's left alone there.
 com.hihonor.search | remove | HONOR Search | The home-screen search that asks you to accept its terms.
 com.hihonor.photos | remove | Gallery | HONOR's gallery. Install another gallery first.
 com.hihonor.screenrecorder | remove | Screen recorder | Records the screen.
@@ -182,7 +181,7 @@ com.huawei.android.tips | hide | Tips | Feature tips notifications.
 com.huawei.videoeditor | hide | Video editor | Huawei's video editor.
 com.huawei.android.thememanager | hide | Themes | Theme store. The current theme stays.
 com.huawei.calendar | hide | Calendar | Huawei's calendar. Install another first.
-com.huawei.contacts | hide | Contacts | Huawei's contacts app. On phones it may be the dialler too: install another first.
+com.huawei.contacts | hide-nosim | Contacts | Huawei's contacts app. On phones it's usually the Phone app too, so it's left alone there.
 com.huawei.photos | hide | Gallery | Huawei's gallery. Install another first.
 com.huawei.filemanager | hide | Files | Huawei's file manager. Install another first.
 com.huawei.hidisk | hide | Files | Huawei's file manager. Install another first.
@@ -232,7 +231,7 @@ com.huawei.bd | hide | User experience | Usage analytics, starts at boot.
 com.huawei.betaclub | hide | Beta Club | Beta testing and log collection.
 com.huawei.browser | hide | Huawei Browser | Huawei's browser. Install another first.
 com.huawei.ca | hide | CA service | Hidden service with location and task access.
-com.huawei.camerakit.impl | hide | Camera kit | Camera features for other apps. Test the camera after hiding.
+com.huawei.camerakit.impl | leave | Camera kit | Camera features for other apps. The camera may rely on it.
 com.huawei.cloud | hide | Cloud desktop | Online desktop service.
 com.huawei.compass | hide | Compass | Compass app.
 com.huawei.contacts.sync | hide | Contacts sync | Syncs contacts with your Huawei ID.
@@ -370,12 +369,13 @@ com.huawei.security.privacycenter | leave | Privacy center | Strips location fro
 com.huawei.privatespace | leave | Private space files | Files in the private space.
 com.huawei.sos | leave | Emergency SOS | Emergency calls and messages. Leave it on a phone.
 com.huawei.tmecustomize | leave | Carrier customisation | Carrier settings.
-com.huawei.android.launcher | leave | Huawei Home | The home screen on older HONOR devices. It may also run gestures and Recents, so it stays even with Lawnchair.
 
 == lockdown | lock | Permission locks | For apps that can't be hidden. Their permissions are locked off, so they can't use the camera, location, contacts and so on.
 com.hihonor.id | lock | HONOR ID | HONOR's account service. HONOR protects it from being removed, so its permissions are locked instead.
 
 == core | core | Core parts | Never hidden, whatever the list says.
+com.hihonor.android.launcher | - | HONOR Home | HONOR's home screen. It also runs the swipe-up gestures and Recents, even with Lawnchair as your home screen, so it's never hidden.
+com.huawei.android.launcher | - | Huawei Home | The home screen on older HONOR devices. It also runs the swipe-up gestures and Recents, so it's never hidden.
 android | - | Android system | The operating system.
 com.android.systemui | - | System UI | Status bar, notifications and navigation.
 com.android.settings | - | Settings | The Settings app.

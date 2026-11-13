@@ -54,6 +54,8 @@ class BootReceiver : BroadcastReceiver() {
         }.start()
         // Some packages appear late in boot; check again a few minutes later.
         Scheduler.runSoon(context, "$trigger+5min", delayMs = 5 * 60_000L)
+        // A tablet that's often off can miss the twice-daily update check, so look once after every restart too.
+        if (trigger == "boot") Scheduler.updateSoon(context, delayMs = 10 * 60_000L)
     }
 }
 
@@ -96,8 +98,9 @@ object Scheduler {
     private const val PERIODIC_ID = 1
     private const val ONESHOT_ID = 2
     private const val UPDATE_ID = 3
+    private const val UPDATE_SOON_ID = 4
     private const val PERIOD_MS = 6 * 60 * 60 * 1000L
-    private const val UPDATE_PERIOD_MS = 24 * 60 * 60 * 1000L
+    const val UPDATE_PERIOD_MS = 12 * 60 * 60 * 1000L
 
     private fun component(ctx: Context) = ComponentName(ctx, EnforceJob::class.java)
 
@@ -111,8 +114,10 @@ object Scheduler {
                     .build()
             )
         }
-        // Daily check for app updates (Lawnchair), only when there's a network.
-        if (js.getPendingJob(UPDATE_ID) == null) {
+        // Twice-daily check for app updates (this app, Lawnchair, HeliBoard), only when there's a network. A job
+        // scheduled by an older version with a different interval is replaced.
+        val upd = js.getPendingJob(UPDATE_ID)
+        if (upd == null || upd.intervalMillis != UPDATE_PERIOD_MS) {
             js.schedule(
                 JobInfo.Builder(UPDATE_ID, component(ctx))
                     .setPeriodic(UPDATE_PERIOD_MS)
@@ -122,6 +127,17 @@ object Scheduler {
                     .build()
             )
         }
+    }
+
+    /** Check for app updates once the network is up, [delayMs] from now (after a restart, say). */
+    fun updateSoon(ctx: Context, delayMs: Long) {
+        ctx.getSystemService(JobScheduler::class.java).schedule(
+            JobInfo.Builder(UPDATE_SOON_ID, component(ctx))
+                .setMinimumLatency(delayMs)
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                .setExtras(PersistableBundle().apply { putString("task", "update") })
+                .build()
+        )
     }
 
     fun cancelAll(ctx: Context) {
@@ -186,7 +202,14 @@ class PackageResultReceiver : BroadcastReceiver() {
             "install" -> if (ok) "installed $pkg" else "couldn't install $pkg (status $status) $msg"
             else -> if (ok) "stripped updates from (or uninstalled) $pkg" else "couldn't strip updates from $pkg (status $status) $msg"
         })
-        if (action == "install") Notifier.show(context, "Honorless Debloater", if (ok) "Installed $pkg." else "Couldn't install $pkg: $msg")
+        val pending = status == android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION
+        if (action == "install" && !ok && !pending) {
+            try { Installer(context).installFailed(pkg, status) } catch (e: Exception) { }
+        }
+        if (action == "install") {
+            val name = if (pkg == context.packageName) "Honorless Debloater" else pkg
+            Notifier.show(context, "Honorless Debloater", if (ok) "Installed $name." else "Couldn't install $name: $msg")
+        }
     }
 
     companion object {

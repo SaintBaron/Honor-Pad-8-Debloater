@@ -401,7 +401,7 @@ def download_tool_update(repo: str, rel: Release, dest_dir: Path, progress: Call
     tool_url = release_asset_url(repo, rel, name)
     sums_url = release_asset_url(repo, rel, SUMS_ASSET)
     dest_dir.mkdir(parents=True, exist_ok=True)
-    sums_path = dest_dir / f".hp8d-sums-{safe_filename_part(rel.tag)}.txt"
+    sums_path = dest_dir / f".honorless-sums-{safe_filename_part(rel.tag)}.txt"
     try:
         download(sums_url, sums_path, lambda d, t: None)
         if sums_path.stat().st_size > 64 * 1024:
@@ -422,6 +422,134 @@ def download_tool_update(repo: str, rel: Release, dest_dir: Path, progress: Call
     if not IS_WINDOWS and not name.endswith(".zip"):
         dest.chmod(0o755)
     return dest
+
+
+# ------------------------------------------------------------------ updating this tool in place
+
+def running_tool(frozen: Optional[bool] = None, executable: Optional[str] = None, mac: bool = IS_MAC) -> Optional[Path]:
+    """The file to replace when this tool updates itself: the .exe (Windows), the .app bundle (macOS) or the
+    program file (Linux). None when it's run from source, which updates with git instead."""
+    if not (getattr(sys, "frozen", False) if frozen is None else frozen):
+        return None
+    exe = Path(executable or sys.executable).resolve()
+    if mac:
+        return next((p for p in exe.parents if p.suffix == ".app"), None)
+    return exe
+
+
+def can_replace(target: Optional[Path]) -> bool:
+    """Whether this user can swap the tool in place (not in a read-only or admin-only folder)."""
+    if target is None or not target.exists():
+        return False
+    parent = target.parent
+    try:
+        probe = parent / f".honorless-write-test-{os.getpid()}"
+        probe.write_bytes(b"")
+        probe.unlink()
+    except OSError:
+        return False
+    return target.is_dir() or os.access(target, os.W_OK)
+
+
+def _extract_mac(zip_path: Path, dest: Path) -> None:
+    # ditto keeps the bundle's symlinks and permissions, which Python's zipfile doesn't.
+    subprocess.run(["ditto", "-x", "-k", str(zip_path), str(dest)], check=True, capture_output=True, timeout=300)
+
+
+def replace_tool(downloaded: Path, target: Path, *, windows: bool = IS_WINDOWS, mac: bool = IS_MAC,
+                 extract: Callable[[Path, Path], None] = _extract_mac) -> Path:
+    """Swap the running tool for [downloaded] (already checked against the release's checksums). The old copy
+    is kept beside it as *.old until the next start, and put back if the swap fails part-way."""
+    parent = target.parent
+    if mac:
+        staging = parent / f".{target.stem}-update"
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir()
+        try:
+            extract(downloaded, staging)
+            apps = [p for p in staging.iterdir() if p.suffix == ".app" and p.is_dir()]
+            if len(apps) != 1:
+                raise ValueError("the download doesn't contain the app")
+            old = parent / (target.name + ".old")
+            shutil.rmtree(old, ignore_errors=True)
+            target.rename(old)          # the running app keeps working from its new name until it quits
+            try:
+                apps[0].rename(target)
+            except OSError:
+                old.rename(target)
+                raise
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        return target
+    new = parent / (target.name + ".new")
+    shutil.copyfile(downloaded, new)
+    if not windows:
+        new.chmod(0o755)
+        os.replace(new, target)         # the running program keeps its open copy; the next start gets this one
+        return target
+    # Windows won't overwrite a running .exe, but it will rename one.
+    old = parent / f"{target.stem}.old{target.suffix}"
+    try:
+        if old.exists():
+            old.unlink()
+    except OSError:
+        old = parent / f"{target.stem}.old-{int(time.time())}{target.suffix}"
+    target.rename(old)
+    try:
+        new.rename(target)
+    except OSError:
+        old.rename(target)
+        raise
+    return target
+
+
+def cleanup_old_tool(target: Optional[Path]) -> None:
+    """Delete what a previous self-update left beside the tool."""
+    if target is None:
+        return
+    for p in target.parent.glob(f"{glob_escape(target.stem)}.old*"):
+        if p == target:
+            continue
+        try:
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+        except OSError:
+            pass
+    for p in (target.parent / (target.name + ".old"), target.parent / (target.name + ".new")):
+        try:
+            shutil.rmtree(p) if p.is_dir() else p.unlink()
+        except OSError:
+            pass
+
+
+def glob_escape(s: str) -> str:
+    return re.sub(r"([*?\[])", r"[\1]", s)
+
+
+def relaunch_env() -> dict:
+    """A clean environment for starting the new copy: without PyInstaller's own variables it would try to reuse
+    this run's unpacked files."""
+    env = dict(child_env() or os.environ)
+    for k in list(env):
+        if k == "_MEIPASS2" or k.startswith("_PYI_"):
+            env.pop(k)
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env
+
+
+def relaunch_tool(target: Path) -> None:
+    if IS_MAC:
+        subprocess.Popen(["open", "-n", str(target)], env=relaunch_env())
+    elif IS_WINDOWS:
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        subprocess.Popen([str(target)], env=relaunch_env(), creationflags=flags, close_fds=True)
+    else:
+        subprocess.Popen([str(target)], env=relaunch_env(), start_new_session=True, close_fds=True)
+
+
+def tool_update_dir() -> Path:
+    d = data_dir() / "tool-update"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def show_in_folder(path: Path) -> None:
@@ -748,6 +876,71 @@ def explain_dpm_error(text: str) -> str:
     if "already provisioned" in t:
         return "This device's firmware only allows a device owner during first-time setup. A factory reset would be needed."
     return "Android refused. The details below say why."
+
+
+# Apps whose screens are install prompts: Android's installer, Google Play Protect, HONOR's and Huawei's
+# "install over USB" checks.
+PROMPT_HINTS = ("packageinstaller", "com.android.vending", "com.google.android.gms", "systemmanager",
+                "securitycenter", "permissioncontroller")
+_RESUMED_RE = re.compile(r"(?:topResumedActivity|mResumedActivity|ResumedActivity)[:=]\s*ActivityRecord\{\S+ \S+ ([\w.]+)/")
+_FOCUS_RE = re.compile(r"mCurrentFocus=Window\{\S+ \S+ ([\w.]+)/")
+
+
+def parse_foreground(text: str) -> Optional[str]:
+    """The package on screen, from `dumpsys activity activities` or `dumpsys window` output."""
+    m = _RESUMED_RE.search(text) or _FOCUS_RE.search(text)
+    return m.group(1) if m else None
+
+
+def foreground_package(adb: "Adb") -> Optional[str]:
+    _, out = adb.shell("dumpsys activity activities | grep -m 3 -E 'topResumedActivity|mResumedActivity'",
+                       quiet=True, timeout=10)
+    pkg = parse_foreground(out)
+    if pkg:
+        return pkg
+    _, out = adb.shell("dumpsys window | grep -m 1 mCurrentFocus", quiet=True, timeout=10)
+    return parse_foreground(out)
+
+
+def install_progress(elapsed: float, foreground: Optional[str]) -> Tuple[str, str]:
+    """What to say while `adb install` runs: (text, style). Installs normally take a few seconds; the waits come
+    from a prompt on the device's screen or Google Play Protect scanning the app."""
+    secs = int(elapsed)
+    if foreground and any(h in foreground for h in PROMPT_HINTS):
+        return (f"A prompt is waiting on the device's screen ({secs}s). Tap Install, Continue installation or "
+                "Install anyway. The app is checked here before it's installed.", "warn")
+    if secs < 15:
+        return (f"Installing... ({secs}s) Watch the device for a prompt.", "")
+    if secs < 60:
+        return (f"Still installing ({secs}s). Google Play Protect may be scanning the app, which can take up to a "
+                "minute. If the screen is locked, unlock it: a prompt may be waiting behind the lock screen.", "warn")
+    return (f"This is taking longer than usual ({secs}s). Unlock the device and look for a prompt, including in "
+            "the notification shade. If there's nothing, wait for this to time out, then unplug the cable, plug "
+            "it back in and try again.", "warn")
+
+
+HONOR_HOMES = ("com.hihonor.android.launcher", "com.huawei.android.launcher")
+
+
+def hidden_honor_homes(adb: "Adb") -> List[str]:
+    """HONOR's home screen runs the swipe gestures and Recents. Older versions of this app could hide it, and
+    the device keeps it hidden after that app is gone, so swiping up stops working."""
+    found = []
+    for pkg in HONOR_HOMES:
+        _, out = adb.shell(f"dumpsys package {pkg} | grep -m 5 -E 'User 0:|hidden='", quiet=True, timeout=20)
+        if re.search(r"\bhidden=true\b", out):
+            found.append(pkg)
+    return found
+
+
+def unhide_honor_homes(adb: "Adb") -> Tuple[List[str], List[str]]:
+    """Try to bring a hidden HONOR home screen back over adb. Returns (fixed, still hidden). Some firmware
+    doesn't let adb do this; the app does it as soon as it's device owner."""
+    fixed, left = [], []
+    for pkg in hidden_honor_homes(adb):
+        adb.shell(f"pm unhide {pkg}", quiet=True, timeout=20)
+        (left if pkg in hidden_honor_homes(adb) else fixed).append(pkg)
+    return fixed, left
 
 
 def explain_install_error(text: str) -> str:
@@ -1454,7 +1647,8 @@ def main() -> None:
             self.update_box = ttk.Frame(self.body)
             self.update_box.pack(anchor="w", fill="x")
             self.para("This tool sets up Honorless Debloater on your device, or updates it if it's already set up. "
-                      "It walks you through every step and checks each one worked before moving on.")
+                      "It walks you through every step and checks each one worked before moving on. Already set up? "
+                      "Go through the steps anyway: anything already done is detected and skipped.")
             ttk.Label(self.body, text="What the app does", font=self.f_head).pack(anchor="w", pady=(4, 2))
             self.para("It becomes the device's \"device owner\", a built-in Android role, and uses it to hide HONOR's "
                       "preinstalled apps and trackers, and to keep them hidden after system updates. No root and no "
@@ -1467,8 +1661,6 @@ def main() -> None:
                 "Android insists on this. You sign straight back in afterwards: nothing is deleted, and your data "
                 "syncs back.",
             ])
-            self.para("Already set up? Just go through the steps. Anything already done is detected and skipped, "
-                      "and you'll be offered the newest version of the app.")
             var = tk.BooleanVar(value=False)
             ttk.Checkbutton(self.body, text="I understand I'll need to sign out of my accounts on the device for a few minutes",
                             variable=var, command=lambda: self.allow_next(var.get())).pack(anchor="w", pady=(6, 4))
@@ -1478,6 +1670,12 @@ def main() -> None:
             repo = self.repo()
             if not repo or tool_version == "source":
                 return
+            target = running_tool()
+            if target is not None:
+                auto = tk.BooleanVar(value=bool(self.settings.get("auto_update_tool", True)))
+                ttk.Checkbutton(self.body, text="Update this tool automatically when a new version is out",
+                                variable=auto, command=lambda: self.settings.set("auto_update_tool", auto.get())
+                                ).pack(anchor="w", pady=(2, 0))
 
             def done(rel, err):
                 if err or not rel or version_tuple(rel.version_name) <= version_tuple(tool_version):
@@ -1488,7 +1686,8 @@ def main() -> None:
                 msg = ttk.Label(row, text=f"Version {rel.version_name} of this tool is out.", style="Warn.TLabel",
                                 font=self.f_head, justify="left", wraplength=440)
                 msg.pack(side="left")
-                get = ttk.Button(row, text="Download it", style="Accent.TButton")
+                in_place = can_replace(target)
+                get = ttk.Button(row, text="Update now" if in_place else "Download it", style="Accent.TButton")
                 get.pack(side="left", padx=(12, 0))
                 page = None
                 if rel.page_url.startswith("https://github.com/"):
@@ -1512,7 +1711,32 @@ def main() -> None:
                             self.log(f"Tool update failed: {e}")
                             self.set_status(msg, "Couldn't download it: " + describe_network_error(e)[:90], "bad")
                             return
-                        self.log(f"Saved the new tool to {path} (its checksum matches the release's SHA256SUMS.txt)")
+                        self.log(f"Downloaded the new tool to {path} (its checksum matches the release's SHA256SUMS.txt)")
+                        if in_place:
+                            try:
+                                replace_tool(path, target)
+                            except (OSError, ValueError, subprocess.SubprocessError) as ex:
+                                self.log(f"Couldn't swap in the new tool: {ex}")
+                                in_place_failed(path)
+                                return
+                            finally:
+                                if path.exists() and path.parent == tool_update_dir():
+                                    path.unlink()
+                            self.settings.set("last_auto_update", rel.tag)
+                            self.log(f"Updated this tool to {rel.version_name}; restarting it")
+                            self.set_status(msg, f"✓ Updated to {rel.version_name} (checksum OK). Restarting...", "good")
+                            get.pack_forget()
+                            if page is not None:
+                                page.pack_forget()
+                            self.root.after(900, restart)
+                            return
+                        saved(path)
+
+                    def in_place_failed(path):
+                        self.set_status(msg, "Couldn't update it in place. Download it instead and run the new copy.", "bad")
+                        get.configure(state="normal", text="Download it", command=lambda: download_to(downloads_dir()))
+
+                    def saved(path):
                         how = "unzip it and open the app inside" if path.suffix == ".zip" else "run it"
                         where = "your Downloads folder" if path.parent.name == "Downloads" else str(path.parent)
                         self.set_status(msg, f"Saved to {where} (checksum OK).\nClose this window, then {how}.", "good")
@@ -1520,8 +1744,32 @@ def main() -> None:
                         if page is not None:
                             page.pack_forget()
                         show_in_folder(path)
-                    self.background(lambda: download_tool_update(repo, rel, downloads_dir(), progress), fetched)
+
+                    def restart():
+                        try:
+                            relaunch_tool(target)
+                        except OSError as ex:
+                            self.set_status(msg, f"Updated. Close this window and open the tool again ({ex}).", "good")
+                            return
+                        self.close()
+
+                    def download_to(folder):
+                        nonlocal in_place
+                        in_place = False
+                        get.configure(state="disabled")
+                        self.background(lambda: download_tool_update(repo, rel, folder, progress), fetched)
+
+                    folder = tool_update_dir() if in_place else downloads_dir()
+                    self.background(lambda: download_tool_update(repo, rel, folder, progress), fetched)
                 get.configure(command=fetch)
+                # Automatic: on the first page only (nothing has been done to the device yet), when it can be
+                # swapped in place, and not twice for the same release (so a bad release can't loop).
+                if (in_place and self.settings.get("auto_update_tool", True)
+                        and self.settings.get("last_auto_update") != rel.tag):
+                    if page is not None:
+                        page.pack_forget()
+                    fetch()
+                    self.set_status(msg, f"Updating this tool to version {rel.version_name}...", "warn")
             self.background(lambda: latest_release(repo), done)
 
         # ---------------------------------------------------------------- tools
@@ -1871,17 +2119,51 @@ def main() -> None:
             btn = ttk.Button(bar, text="Update the app" if updating else "Install the app", style="Accent.TButton")
             btn.pack(side="left")
             detail = self.para("")
+            tip = self.para("")
 
             def go():
                 self.set_busy(True, btn)
                 self.set_status(st, "Installing... check the device for a prompt.", "")
+                running = {"on": True, "fg": None}
+                started = time.monotonic()
+                adb = self.adb
+
+                def watch():
+                    # What's on the device's screen, so a waiting prompt can be pointed out.
+                    while running["on"]:
+                        try:
+                            running["fg"] = foreground_package(adb)
+                        except Exception:  # noqa: BLE001 - only a hint
+                            running["fg"] = None
+                        for _ in range(6):
+                            if not running["on"]:
+                                return
+                            time.sleep(0.5)
+
+                def tick():
+                    try:
+                        if not running["on"] or not st.winfo_exists():
+                            return
+                    except tk.TclError:
+                        return
+                    text, style = install_progress(time.monotonic() - started, running["fg"])
+                    self.set_status(st, text, style)
+                    self.root.after(1000, tick)
 
                 def work():
                     verify_apk(self.apk_path, self.trusted)   # re-check the file right before it's installed
-                    rc, out = self.adb.run("install", "-r", str(self.apk_path), timeout=180)
-                    return rc, out, installed_version(self.adb)
+                    adb.shell("input keyevent KEYCODE_WAKEUP", quiet=True, timeout=10)  # prompts need the screen on
+                    threading.Thread(target=watch, daemon=True).start()
+                    try:
+                        rc, out = adb.run("install", "-r", str(self.apk_path), timeout=180)
+                    finally:
+                        running["on"] = False
+                    return rc, out, installed_version(adb)
+
+                self.root.after(1000, tick)
 
                 def done(res, err):
+                    running["on"] = False
                     self.set_busy(False, btn)
                     if isinstance(err, ApkError):
                         self.set_status(st, f"✗ Stopped: the downloaded file failed its security check ({err}). "
@@ -1897,9 +2179,25 @@ def main() -> None:
                         self.set_status(st, "✓ " + ("Updated." if updating else "Installed."), "good")
                         btn.configure(state="disabled")
                         self.complete()
+                        tip.configure(text="You can leave the app on the device at any time during setup (swipe up or "
+                                           "press Home) to check something in Settings. Each step here checks the "
+                                           "device itself, so nothing depends on the app staying open.")
+                        self.background(lambda: unhide_honor_homes(adb), homes_done)
                     else:
                         self.set_status(st, "✗ " + explain_install_error(out), "bad")
                         detail.configure(text=out.strip()[-600:])
+
+                def homes_done(res, err):
+                    # Swiping up needs HONOR's home screen, even with another one in use.
+                    if err or not res:
+                        return
+                    fixed, left = res
+                    if fixed:
+                        detail.configure(text="✓ HONOR's home screen was hidden (by an older version of this app), so "
+                                              "swiping up didn't work. It's back.", style="Good.TLabel")
+                    elif left:
+                        detail.configure(text="HONOR's home screen is hidden, so swiping up won't work yet. The app "
+                                              "brings it back once it's set up in the next step.", style="Warn.TLabel")
                 self.background(work, done)
             btn.configure(command=go)
 
@@ -2166,10 +2464,12 @@ def main() -> None:
                       "hidden through system updates. Last of all, turn USB debugging off again (Settings > System > "
                       "Developer options), or switch on \"Block USB debugging\" in the app; switch it back on before "
                       "using this tool again.")
-            self.para("To update the app later, run this tool again: it fetches the newest version and installs it, "
-                      "skipping the steps you've already done.")
+            self.para("The app keeps itself up to date: it checks twice a day and after a restart (Apps > Honorless "
+                      "Debloater shows the last check). To update it by hand, run this tool again: it fetches the "
+                      "newest version and installs it, skipping the steps you've already done.")
             self.complete()
 
+    cleanup_old_tool(running_tool())   # what the last self-update left behind
     root = tk.Tk()
     try:  # the same shield icon as the device app, for the window and taskbar
         root._icon = tk.PhotoImage(file=str(resource_dir() / "icons" / "icon.png"))
